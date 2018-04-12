@@ -1,0 +1,383 @@
+\documentclass{article}
+
+% if you need to pass options to natbib, use, e.g.:
+% \PassOptionsToPackage{numbers, compress}{natbib}
+% before loading nips_2018
+
+% ready for submission
+\usepackage[preprint]{nips_2018}
+
+% to compile a preprint version, e.g., for submission to arXiv, add
+% add the [preprint] option:
+% \usepackage[preprint]{nips_2018}
+
+% to compile a camera-ready version, add the [final] option, e.g.:
+% \usepackage[final]{nips_2018}
+
+% to avoid loading the natbib package, add option nonatbib:
+% \usepackage[nonatbib]{nips_2018}
+
+\usepackage[utf8]{inputenc} % allow utf-8 input
+\usepackage[T1]{fontenc}    % use 8-bit T1 fonts
+\usepackage{hyperref}       % hyperlinks
+\usepackage{url}            % simple URL typesetting
+\usepackage{booktabs}       % professional-quality tables
+\usepackage{amsfonts}       % blackboard math symbols
+\usepackage{nicefrac}       % compact symbols for 1/2, etc.
+\usepackage{microtype}      % microtypography
+\usepackage{listings}       % code with syntax highlighting
+\usepackage[ruled,vlined]{algorithm2e} % for pseudocode algorithms
+
+\title{NengoDL: Combining deep learning and neural modelling methods}
+
+% The \author macro works with any number of authors. There are two
+% commands used to separate the names and addresses of multiple
+% authors: \And and \AND.
+%
+% Using \And between authors leaves it to LaTeX to determine where to
+% break the lines. Using \AND forces a line break at that point. So,
+% if LaTeX puts 3 of 4 authors names on the first line, and the last
+% on the second line, try using \AND instead of \And before the third
+% author name.
+
+\author{
+  Daniel Rasmussen \\
+  Applied Brain Research Inc.\\
+  Waterloo, ON, Canada \\
+  \texttt{daniel.rasmussen@appliedbrainresearch.com}
+}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+  TODO
+\end{abstract}
+
+\section{Introduction}
+
+Modern deep learning (DL) has its roots in the field of neural modelling (the effort to build brain-like simulations of neural/cognitive processes).  For example, the original PDP book was heavily motivated by the effort to build models of human language phenomena \citep{needcitation}.  However, since those origins the two domains have progressed along largely independent paths.  We now usually think of deep learning in terms of abstract nonlinear optimization problems/methods, and practitioners are rarely concerned with applying those methods to the study of the brain (with exceptions, e.g. \citet{needcitation}).  Correspondingly, there is a perception among neural modellers that deep learning methods are limited to abstract applications of artificial neural networks, and not of great help to those interested in studying how the brain works (again with exceptions, e.g. \citet{needcitation}).
+
+One significant outcome of this divide is that the tools of the two fields have become quite isolated.  Deep learning researchers use, e.g., TensorFlow \citep{Abadi2016}, Theano \citep{needcitation}, Caffe \citep{needcitation}, or Torch \citep{needcitation}, while neural modellers use, e.g., Nengo \citep{Bekolay2014}, Brian \citep{needcitation}, NEST \citep{needcitation}, Neuron \citep{needcitation}, or PyNN \citep{needcitation}. There is very little overlap between the two groups of users.
+
+Our aim with NengoDL is to provide a tool that brings these two worlds together.  We want to combine the robust neuromorphic modelling API of Nengo with the power of deep learning frameworks (specifically TensorFlow).  In particular, there are three key design goals of NengoDL:
+
+\begin{itemize}
+\item Construct neural models using Nengo, optimize their parameters using deep learning training methods
+\item Improve simulation speed of neural models through GPU acceleration
+\item Make it easy to construct hybrid models (e.g., inserting convolutional layers into a neural model)
+\end{itemize}
+
+\subsection{Related work}
+
+??
+
+\section{Background}
+\label{sec:background}
+
+In this section we will give a brief introduction to the two tools we bring together in this work, Nengo \citep{Bekolay2014} and TensorFlow \citep{Abadi2016}.  Our goal is not to give a comprehensive or representative introduction to their features, but rather to focus on those elements that are most relevant to the upcoming discussion of NengoDL.  The interested reader can find more information at
+
+\begin{itemize}
+\item {\bf Nengo}: \url{https://www.nengo.ai}, \citet{Bekolay2014}
+\item {\bf TensorFlow}|: \url{https://www.tensorflow.org}, \citet{Abadi2016}
+\end{itemize}
+
+\subsection{Nengo}
+
+Nengo is a software framework designed to enable the construction and simulation of large-scale neural models.  It has been used to develop, e.g., models of human motor control \citep{needcitation}, visual attention \citep{needcitation}, inductive reasoning \citep{Rasmussen2014}, working memory \citep{Choo2010}, reinforcement learning \citep{Stewart2012,Rasmussen2017}, as well as large integrative models that combine these systems to produce end-to-end functional models of the brain \citep{Eliasmith2012a}.
+
+There are a number of common characteristics of these kinds of models, which Nengo is designed to support:
+
+\begin{itemize}
+\item {\bf Temporal dynamics}: Nengo models are essentially temporal; they are simulated over time, and even a constant input (although inputs are rarely constant) will result in complex internal dynamics (the accumulation of neuron voltages, post-synaptic current filtering, communication delays, online learning rules, etc.).
+\item {\bf Complex neurons}: Closely related to the previous point, Nengo models typically use more complex neuron models than standard DL nonlinearities. In particular, these models are often simulated using spiking neurons.  Managing the parameters of these neuron models as well as their internal simulation is an important element of Nengo's design.
+\item {\bf Complex network structure}: Neural models are often highly interconnected (e.g., containing large numbers of lateral/feedback connections), without the regular/feedforward layer-based structure common in many deep learning models.  The Nengo model construction API has been designed to support this style of network.
+\item {\bf Neuromorphic hardware}: There are a number of interesting neuromorphic hardware platforms that are in development or have been recently released \citep{needcitation}.  Nengo's architecture has been designed to allow the same model to run across diverse hardware backends, with minimal load on the user.
+\end{itemize}
+
+Note that none of these issues are exclusive to neural modelling.  However, they are common or prominent concerns in that field, which has shaped the design emphasis of tools such as Nengo.  This is why it is important to combine the strengths of Nengo with the strengths of TensorFlow, rather than simply choosing one over the other.
+
+\subsubsection{Architecture}
+
+As mentioned, one of the important design goals of Nengo is to allow the same model to run transparently (from the user perspective) across a wide range of hardware platforms.  Thus Nengo's architecture has been designed to provide a clean separation between the front-end code (which modellers use to define the structure/parameters of their network) and back-end implementation (which handles the simulation of that network on some underlying computational platform).  
+
+%TODO: insert nengo stack graphic
+
+Users begin by constructing a \texttt{Network}, and populating it with the objects that define their model.  This is then passed to a \texttt{Simulator}, which encapsulates the back-end logic required to simulate that \texttt{Network}.  For example, the default \texttt{nengo.Simulator} will simulate a network on a conventional CPU, or the user can simply replace \texttt{nengo.Simulator} with \texttt{nengo\_ocl.Simulator} or \texttt{nengo\_spinnaker.Simulator} to run that same model on a GPU (using OpenCL) or SpiNNaker (custom neuromorphic hardware; \citealt{needcitation}), respectively.  
+
+In the case of NengoDL, we provide a \texttt{nengo\_dl.Simulator} that will simulate a Nengo network via TensorFlow.  Thus NengoDL resides primarily on the back-end side of the Nengo architecture (although it does provide some new user-facing features, which we will discuss later).  In other words, the model construction process is largely unchanged from the user perspective when switching from Nengo to NengoDL; any model constructed for the default \texttt{nengo.Simulator} will also run on \texttt{nengo\_dl.Simulator} and produce the same output (within the bounds of floating point calculations).  Thus we will give a brief introduction to the front-end side of Nengo here, but focus primarily on the back-end.  More details on the front-end can be found at \url{https://www.nengo.ai} or \citet{Bekolay2014}.
+
+\subsubsection{Front-end objects}
+
+A Nengo model is composed of 5 basic objects:
+
+\begin{itemize}
+\item {\bf Network}: Acts as a container for other Nengo objects
+\item {\bf Ensemble}: A group of neurons
+\item {\bf Node}: Used to insert signals into a model (e.g., sensory input)
+\item {\bf Connection}: Used to connect Nodes or Ensembles, allowing them to pass information to each other
+\item {\bf Probe}: Extracts data from the model for analysis
+\end{itemize}
+
+We can think of these objects as defining a graph, where Nodes/Ensembles are the vertices and Connections are the edges.  Each of these objects, in addition to defining the structure of the graph, stores information about the parameters of that object (e.g., neuron types and bias values for the \texttt{Ensemble}, or synaptic filters and connection weights for the \texttt{Connection}).  Thus in the end we can think of a front-end Nengo network as a large data structure defining the structure and parameters of a model.  It is then the task of the back-end to take the information encoded in that data structure and construct/simulate an implementation that matches that specification.
+
+\subsubsection{Back-end objects}
+
+In general, a Nengo back-end is free to process the input \texttt{Network} however it wants.  However, Nengo provides a build process that translates the high-level Nengo objects described above into a collection of lower-level operations.  This intermediate representation is often useful when constructing a \texttt{Simulator}, as it is closer to the underlying computational operations that need to be executed on the back-end platform.  This intermediate representation consists of two basic objects:
+
+\begin{itemize}
+\item {\bf Signals}: A \texttt{Signal} is a generic tensor array that stores internal simulation values
+\item {\bf Operators}: An \texttt{Operator} reads data from some number of input \texttt{Signals}, performs some computation, and writes the result to some output \texttt{Signals}
+\end{itemize}
+
+There are a number of basic Operator types, such as \texttt{Copy} (to copy a value from one signal to another), \texttt{ElementwiseInc} (computes the element-wise multiplication of two input signals and increments some output signal with the result), or \texttt{DotInc} (computes a matrix-vector multiplication).  There are also Operators for the different neuron types (e.g., \texttt{SimLIF}, which reads signals containing the input currents and internal state values of a group of LIF neurons and computes output spikes) or online learning rules.
+
+% TODO: make a figure that shows Connection->Operators mapping
+
+The task of the back-end is then to provide a concrete implementation for these operations.  For example, the default \texttt{nengo.Simulator} uses the Python \texttt{numpy} library, where \texttt{numpy.ndarray} is used to represent \texttt{Signals} and, e.g., \texttt{numpy.dot} is used to implement \texttt{DotInc}.  The first challenge for NengoDL is to do the same, but using TensorFlow to implement these basic operations.
+
+\subsection{TensorFlow}
+
+TensorFlow is a software framework developed by Google \citep{Abadi2016}.  Its primary use case is deep learning, but we can think of it more generally as a numeric computation library, which we want to use to run a neural simulation.
+
+TensorFlow uses a declarative programming approach, meaning that rather than directly specifying the steps of the program (imperative programming) the user specifies at a more abstract level the computations they want to perform.  This declarative programming looks a lot like the Nengo back-end framework described above; at its core it consists of \texttt{Tensors}, which represent values, and \texttt{Ops}, which perform computations on some input \texttt{Tensors} to produce output \texttt{Tensors}. The programmer begins with some input \texttt{Tensors}, and then builds up a computation graph by applying different \texttt{Ops} that apply various transformations.  For example, \texttt{y = tf.matmul(a, b)} adds a Tensor \texttt{y} to the graph that represents the matrix multiplication of two other tensors \texttt{a} and \texttt{b}.  The user can then ask TensorFlow to compute the value of \texttt{y} (or any other \texttt{Tensor} in the graph), and TensorFlow will translate that declarative specification into actual steps that are executed on the CPU/GPU to compute the value.
+
+There are two key features of TensorFlow that we take advantage of in NengoDL:
+
+\begin{itemize}
+\item {\bf Automatic differentiation}: Specifying our programs via this declarative graph enables various automated manipulations of that graph.  For example, we can add an element to the graph that represents the derivative $\frac{\partial y}{\partial a}$, and TensorFlow will automatically add all the elements to the graph required to compute that derivative.  This makes it easy (from a user perspective) to apply gradient descent-based optimization methods; once we've specified the structure of our network in TensorFlow, we get the gradient calculations essentially for free.
+\item {\bf Accelerator abstraction}: The term ``accelerator'' refers to any under-the-hood tool that allows a TensorFlow program to run faster.  The most common example is a GPU, but this can also include custom hardware or software optimizations.  The important feature from our perspective is that with the declarative programming style we do not need to worry about \emph{how} our program will run; once we have defined the structure of the computation, we can leave it up to TensorFlow to figure out how to best take advantage of the available accelerators to run that program.
+\end{itemize}
+
+To summarize, once we are able to accurately translate a Nengo model into a TensorFlow computation graph, we are able to automatically differentiate our Nengo models and get significant improvements in simulation speed.
+
+\section{Using NengoDL}
+
+We will begin by describing the features/usage of NengoDL from a user perspective; the next section will go into more detail on how NengoDL is implemented.  Our goal here is not to provide a manual for NengoDL; that purpose is better served by the documentation, available at \url{https://www.nengo.ai/nengo-dl}.  Instead we will focus, at a relatively high level, on what users can do with NengoDL, in order to frame the upcoming implementation description.
+
+\subsection{Running a model}
+
+The primary interface for NengoDL is through the \texttt{nengo\_dl.Simulator} class.  At its simplest, this is a drop-in replacement for the default \texttt{nengo.Simulator}.  A very simple model would look something like
+
+\lstset{language=Python, numbers=left, columns=fixed, basicstyle=\ttfamily}
+\lstinputlisting[firstline=2, lastline=13]{paper_code.py}
+
+This creates a \texttt{Network} to hold our model (line 4), adds a \texttt{Node} that simply outputs a constant value of 1 (line 5), creates an \texttt{Ensemble} with 100 neurons and 1 represented dimension (line 6), connects the input \texttt{Node} to the \texttt{Ensemble} (line 7), and adds a probe to the output of the \texttt{Ensemble} (line 8).  Note that this is all front-end code, which is completely independent of the back-end being used.  We will not go into any detail on how to construct a Nengo model here; see \citet{Bekolay2014} or the documentation at \url{https://www.nengo.ai/nengo} for more information in that regard.
+
+We specify the back-end by creating a \texttt{nengo\_dl.Simulator} (line 10).  We then run the simulation for one second (line 11) and print the data collected by the probe (line 12).  Although we are using NengoDL here, we could switch line 10 to \texttt{nengo.Simulator} and everything else would continue to function in the same way.
+
+However, the NengoDL simulator also adds some new options the user can take advantage of.  We can use \texttt{nengo\_dl.Simulator(net, device='/cpu:0')} or \texttt{nengo\_dl.Simulator(net, device='/gpu:0')} to run the model on the CPU or GPU, respectively.  Or we could use the \texttt{dtype=tf.float32/tf.float64} argument to control the floating point precision of the simulation.
+
+The NengoDL simulator also has a \texttt{minibatch\_size} argument, which will configure the simulation to run multiple inputs in parallel.  That is,
+
+\lstset{numbers=none}
+\lstinputlisting[firstline=16, lastline=18]{paper_code.py}
+
+is functionally equivalent to
+
+\lstinputlisting[firstline=21, lastline=25]{paper_code.py}
+
+The former will be much faster, as it takes better advantage of parallelism in the computations.  However, the output is not particularly interesting in this case, since the input is the same in all 10 instances (the constant input of 1 we specified when creating the input \texttt{Node}).  To take better advantage of batched simulations we need to utilize another new NengoDL feature, input feeds.
+
+Input feeds allow the user to override the default value of any input \texttt{Node} in the model.  This is specified via the \texttt{input\_feeds} argument of \texttt{sim.run}.  This takes a dictionary mapping \texttt{Nodes} to arrays containing the values we want that node to output at each time step.  For example, we could have the input node output a random number on each timestep, with different random numbers in each batch element, via
+
+\lstinputlisting[firstline=28, lastline=32]{paper_code.py}
+
+Note the shape of the input array; the first dimension is the batch size (10), the second is the number of timesteps (1000, since we are running for one second with the default timestep of 0.001s), and the third is the output dimensionality of the node (1).
+
+Again, this is not an exhaustive description of the features of the NengoDL simulator, see the documentation at \url{https://www.nengo.ai/nengo-dl/simulator} for more details and examples.  We hope here to convey the basic flavour of running models with NengoDL; that is, largely the same as working with the default Nengo simulator, but with a few extra bonuses.
+
+\subsection{Training a model}
+
+An entirely new feature of NengoDL is the ability to optimize parameters of the model via deep learning training methods.  The default Nengo simulator also optimizes model parameters, but via a least squares optimization method, the Neural Engineering Framework\citep[NEF;][]{Eliasmith2003}.  The advantage of this method is that it is fast and flexible (e.g., it does not require the model to be differentiable).  However, it can only optimize with respect to the inputs and outputs of a single layer, and is only applied to the output connection weights.  Deep learning methods allow us to jointly optimize across all the parameters in a model, allowing for more detailed fine-tuning.  Note that the NEF optimization methods are also available and used in NengoDL; we are simply adding a new set of optimization methods to our modelling tool set.
+
+These methods are accessed via the new \texttt{sim.train} method.  For example, we could train our example network from above to compute the square function:\footnote{Note that this code is only intended to introduce the syntax; it would not result in particularly effective training if we were to run it.  Better performance would require a more complicated Nengo model, which we are trying to avoid in this description.  Various full functional examples can be found at \url{https://www.nengo.ai/nengo-dl/examples}.}
+
+\lstset{numbers=left}
+\lstinputlisting[firstline=35, lastline=46]{paper_code.py}
+
+When performing this style of optimization we need to specify the input and target values (for each entry in the input array, we want the network to output the corresponding value from the target array).  In line 3 we create a random input array; this works much the same as the \texttt{input\_feeds} example above, with axes corresponding to batch size, number of timesteps, and the dimensionality of the input node, respectively.  Note that the batch size is the total number of elements in the training data set; these will be split into chunks of \texttt{minibatch\_size} elements during training, and the training will run through the whole dataset \texttt{n\_epochs} times (line 11).  We pass the inputs to the \texttt{train} function as a dict that maps input nodes to input arrays, as we did with the \texttt{input\_feeds} (line 8).
+
+Specifying targets works in much the same way, but with respect to output \texttt{Probes} instead of input \texttt{Nodes} (lines 4 and 9).  Semantically, this specifies that when the input node outputs the values from the \texttt{inputs} array, we expect to see the corresponding \texttt{targets} values at the output probe.  It is then the goal of the training process to optimize the parameters in between \texttt{a} and \texttt{p} so as to make that happen.
+
+On line 10 we specify the optimization method that should be used during the training process.  TensorFlow provides a number of standard optimization methods, any of which can be used with NengoDL (or any custom optimizer that conforms to TensorFlow's optimizer API).  Note that most deep learning optimization methods rely on some version of gradient descent, which means that the network needs to be differentiable.  In many neuromorphic models this is not typically the case (e.g., the spiking LIF neuron model is not differentiable), so applying these optimization methods restricts the kinds of models that can be studied.  However, in the results section (TODO: insert section reference) we will see an example of one way we can work around this.
+
+Finally, on line 12 we define the the objective function.  This is the function that compares the output of the network to the specified target values and generates an error value, which the optimizer will then seek to minimize.  Passing \texttt{``mse''} will use the common Mean Squared Error function, or the user can pass an arbitrary function that maps outputs and targets to an error value using TensorFlow operations.
+
+More information on the features and usage of the \texttt{sim.train} function can be found at \url{https://www.nengo.ai/nengo-dl/training}.
+
+\subsection{Inserting TensorFlow code}
+
+Another key feature of NengoDL is the ability to combine deep learning-style networks with Nengo neuromorphic-style networks.  For example, we could use a state-of-the-art convolutional vision network to extract features from raw input images, and then connect the output of that network to a spiking neuromorphic model.  This gives us the best of both worlds, allowing us to choose whichever paradigm is most appropriate for different aspects of a model.
+
+This functionality is accessed through the \texttt{nengo\_dl.TensorNode} class.  \texttt{TensorNodes} are analogous to standard Nengo \texttt{Nodes}, except they integrate natively with TensorFlow code.  Each \texttt{TensorNode} defines a function that maps inputs to outputs via TensorFlow operations.  The \texttt{TensorNode} is added to a Nengo network and can be connected to other parts of the model via \texttt{Connections}, the same as \texttt{Ensembles}/\texttt{Nodes}.  Any values received from input \texttt{Connections} to the \texttt{TensorNode} will be passed as inputs to that function, and the output values of that function will be passed along any outgoing \texttt{Connections}.  For example, we could add a \texttt{TensorNode} to our example network from Section~X that applies a dense weight layer to the signal from the input node \texttt{a}, and sends the resulting value to the ensemble \texttt{b}:
+
+\lstinputlisting[firstline=49, lastline=54]{paper_code.py}
+
+First we define the TensorFlow function, which takes two input variables, the current simulation time, texttt{t}, and the value from any incoming \texttt{Connections} to the \texttt{TensorNode}, \texttt{x} (line 2).  Then we apply whatever TensorFlow ops we would like in order to compute the \texttt{TensorNode} output; in this case we are applying the \texttt{tf.layers.dense} function with 100 output nodes, which will create a dense weight matrix and apply the \texttt{relu} nonlinearity to the output (line 3).  Next we create the \texttt{TensorNode}, passing it the function we defined and specifying the dimensionality of the function inputs (line 4).  Finally we connect up the inputs (from node \texttt{a}) and outputs (connecting directly to the neurons of ensemble \texttt{b}).
+
+NengoDL also provides the the \texttt{nengo\_dl.tensor\_layer} function, an alternate interface for creating \texttt{TensorNodes} designed to mimic the familiar layer-based syntax common to many deep learning packages.  This is simply syntactic sugar that combines the creation of a \texttt{TensorNode} and the \texttt{Connection} from some input object to that \texttt{TensorNode} in one step.  For example, we could redo the above example using \texttt{tensor\_layer}:
+
+\lstinputlisting[firstline=57, lastline=60]{paper_code.py}
+
+In these simple examples we could have easily achieved the same result using normal Nengo objects.  However, more complicated deep learning network architectures may not be easily expressed through the Nengo API, which is where the value of \texttt{TensorNodes} becomes more apparent.  See \url{https://www.nengo.ai/nengo-dl/examples/pretrained_model} for a more in-depth example.  More details on the features of \texttt{TensorNodes} can be found at \url{https://www.nengo.ai/nengo-dl/tensor_node}.
+
+\section{Implementation}
+
+We will now dive into more detail on how NengoDL is implemented.  Knowledge of this infrastructure is not required to use NengoDL, but is helpful for advanced users who want to do something like add new NengoDL neuron models.  The implementation also showcases some somewhat esoteric uses of TensorFlow, which may be of interest to other TensorFlow users.
+
+\subsection{TensorFlow mapping}
+
+As discussed in Section~\ref{sec:background}, Nengo produces a back-end representation consisting of \texttt{Signals} and \texttt{Operators}, which we need to map into a TensorFlow computation graph.
+
+\subsubsection{Signals}
+
+A seemingly natural solution would be to map \texttt{Signals} to \texttt{Tensors}.  However, in Nengo we often have multiple \texttt{Operators} that all want to write to the same \texttt{Signal}, or parts of a \texttt{Signal}, and then other \texttt{Operators} that want to read the final result of those combined writes (rather than the output from any individual \texttt{Operator}).  \texttt{Tensors} do not naturally support this style of processing; once a \texttt{Tensor} has been created it cannot be modified, except by creating a new \texttt{Tensor}.  That is, if three \texttt{Operators} all increment the same output \texttt{Signal}, that will actually result in a new output \texttt{Tensor} each time.  Thus we need to think of \texttt{Signals} as a more abstract representation, where writing to the same \texttt{Signal} may represent writing to various different \texttt{Tensors}.
+
+To manage this bookkeeping we use a data structure called \texttt{SignalDict}.  This manages the mapping between \texttt{Signals} and the \texttt{Tensor} representing the current value of that \texttt{Signal}.  For example, imagine we have a \texttt{Signal} $s$ with current value $x$.  Suppose an \texttt{Operator} wants to add 1 to the value of $s$.  This will result in a new value $y = x + 1$, which will then be stored in the \texttt{SignalDict} as the current value of $s$.  Then when another \texttt{Operator} wants to add 2 to the value of $s$ we look up the current value $y$, create a new value $z = y + 2$, and store that again as the new value of $s$.  Thus all the \texttt{Operators} have the illusion that they are reading and writing to the same signals, even though that \texttt{Signal} may actually be represented as an interconnected graph of \texttt{Tensors}.
+
+A second issue alluded to above is that in Nengo we often want to write to some subset of the elements in a \texttt{Signal} array.  \texttt{Tensors} are not designed to support this kind of operation; it is not possible to modify parts of a \texttt{Tensor} in-place, we can only create entirely new \texttt{Tensors}.  It is possible to achieve similar effects using conditional TensorFlow operators, but this is slow and inefficient (for example, if we wanted to increment just one element in a 1000-dimensional vector $x$, we would have to create a new 1000-dimensional vector $y$ that is just a copy of $x$ in 999 of its elements).
+
+Fortunately there is another TensorFlow data structure that does support in-place modification of elements: \texttt{Variables}.  \texttt{Variables} are usually used to represent things like connection weight matrices, and because we want optimizers to be able to iteratively update those weights during the training process (without generating a new copy of all the model's parameters each time) they are designed to support in-place modification.  However, more generally we can just think of \texttt{Variables} as stateful \texttt{Tensors}, which is exactly what we want for our \texttt{Signal} values.  So in practice the \texttt{SignalDict} will actually maintain a mapping from \texttt{Signals} to \texttt{Variables}, so every time an \texttt{Operator} reads or writes to (part of) a \texttt{Signal}, the \texttt{SignalDict} will direct that information to the appropriate \texttt{Variable}.\footnote{We still need the \texttt{SignalDict} bookkeeping because we need to make sure that reads and writes to the \texttt{Variable} happen in the right order.  So, for example, when an \texttt{Operator} reads from a \texttt{Variable} $v$ it reads from the version of that variable \emph{after} any other \texttt{Operators} have made their updates.  The \texttt{SignalDict} keeps track of those versions, and directs the reads/writes to the appropriate one.}
+
+\subsubsection{Operators}
+
+With this infrastructure in place, the mapping from Nengo \texttt{Operators} to TensorFlow \texttt{Ops} is relatively straightforward.  Every \texttt{Operator} implementation follows the same basic structure:
+
+\begin{enumerate}
+\item Get the current value of all the input \texttt{Signals} from the \texttt{SignalDict}
+\item Apply TensorFlow ops that implement the desired computation
+\item Use the \texttt{SignalDict} to write the results back to any output \texttt{Signals}
+\end{enumerate}
+
+Thus we can create a small computational subgraph consisting of reads, transformations, and writes that will implement each Nengo \texttt{Operator}.  The subgraphs for different \texttt{Operators} are connected via the \texttt{Signals} (represented as \texttt{Variables}) they read and write.  So as we iterate through all the Nengo \texttt{Operators} and add them into the TensorFlow graph, we gradually build up a complete graph of interconnected ops that will implement a single timestep of a Nengo simulation.
+
+The final step is to embed this single timestep within a framework that will simulate the model over time.  For this we can use TensorFlow's \texttt{tf.while\_loop}, which is a way to represent a loop using TensorFlow's declarative programming style.  Generally speaking this will meet all of our needs, although some book-keeping is needed to make sure that computations from different timesteps do not overlap incorrectly.  The only concern is that \texttt{tf.while\_loop} adds a certain amount of overhead to every iteration, which can slow down the simulation.  Thus NengoDL has an option to unroll the simulation loop by explicitly building multiple timesteps into the TensorFlow computation graph.  Essentially we go through the same process as above to build a single timestep, then repeat that $n$ times so that we end up with $n$ implementations of every nengo \texttt{Operator} (all connected together in the correct order thanks to the \texttt{SignalDict}).  We then embed that whole thing within a \texttt{tf.while\_loop}, so that every iteration will execute $n$ timesteps.  This results in a more complicated TensorFlow graph, which increases the build time and memory usage, but can significantly improve the simulation speed.  This functionality is accessed through the \texttt{unroll\_simulation} parameter of \texttt{nengo\_dl.Simulator}, where \texttt{nengo\_dl.Simulator(net, unroll\_simulation=10)} indicates that we should unroll the simulation as above with $n=10$.
+
+\subsection{Graph optimizations}
+
+Naively implementing the above process results in a functional simulator, but a slow one.  The basic problem is that every time an \texttt{Op} like \texttt{tf.matmul} is executed TensorFlow has to launch a kernel, and there is a certain amount of associated overhead (especially when launching kernels on the GPU).  If we have many small kernel launches, any benefits of the underlying accelerator will be lost in that overhead.  So when building an efficient neural simulator in TensorFlow it is important that we try to combine operations as much as possible, so that we end up with fewer, larger kernels.  For example, imagine we have 10 \texttt{ElementwiseInc} operations, each reading two signals and multiplying them together.  Implemented individually, this would be 20 reads, 10 multiplies, and 10 writes.  It would be much better to combine those operations together into one large op that would do two reads, one multiply, and one write.
+
+\subsubsection{Merging}
+
+The first step is to merge \texttt{Signals}, so that we can read/write larger chunks of data.  We do this by concatenating them along the first dimension, e.g. combining two $10 \times 5$ arrays into one $20 x 5$ array.  Note that this requires that the array shapes match on all dimensions beyond the first (i.e., we couldn't merge a $10 \times 5$ with a $10 \times 6$ array).  The arrays also need to have the same type (e.g. int versus float) and other TensorFlow meta information, such as trainability.  Thus we will still end up with various different base arrays, but a much smaller number than we started with.
+
+% TODO: figure showing merged signal reads/writes
+
+NengoDL defines a new object called a \texttt{TensorSignal}, which stores a reference to a base array and some indices.  We then translate every \texttt{Signal} into a \texttt{TensorSignal}, so that whereas before an \texttt{Operator} would read/write to some \texttt{Signal} array, instead it will read/write to some subset of the base array (this is possible because we're using \texttt{Variables}, as discussed above).  Merging multiple reads into one is then as easy as combining their indices (as long as all the reads have the same base array).
+
+The next step is to merge the operations themselves (e.g., combining the ten multiplies into one).  Generally speaking, two operations are mergeable if each of their inputs/outputs are mergeable (have the same base array).  For example, in the \texttt{ElementwiseInc} case, once we are able to read each input as one large chunk, we can do a single \texttt{tf.multiply} to multiply them all together at once.  However, there are some additional caveats for whether or not more complex operations can be merged, which depend on the details of those operators.
+
+The other main concern for merging operators is that we cannot merge two operators if the input to one depends on the output of the other.  This would introduce a circular dependency if we tried to compute those two operations simultaneously.  Fortunately, Nengo already organizes all the \texttt{Operators} into a dependency graph, in order to schedule their execution (e.g., so that reads and writes to a \texttt{Signal} happen in the correct order).  So we can use that graph to determine whether or not two operators depend on each other, and therefore whether or not they are mergeable.
+
+\subsubsection{Planning}
+
+Unfortunately, merging operators is not as simple as combining all the operators that are theoretically mergeable according to the above criteria.  The order in which operators are executed, based on the \texttt{Signals} they read and write, affects which operators can be merged.  We can see an example of this in Figure~X.  TODO: describe figure.  Thus it is important that we plan the order of operator execution in a way that promotes operator merging.  
+
+% TODO: figure
+
+More specifically, the goal of the planning process is to take an (unordered) list of \texttt{Operators}, and arrange it into groups of \texttt{Operators} that will be merged and executed simultaneously.  At the same time, the planner needs to perform the interrelated task of sorting those groups into an execution order.
+
+NengoDL includes a number of different planning methods, such as a greedy algorithm that simply selects the largest available group of operators to be scheduled next, or a method based on analyzing the transitive closure of the dependency graph (with some heuristic prioritization), inspired by \citet{needcitation}.  However, the method that we found to provide the best tradeoff between plan quality and optimization time, in general, is a bounded breadth-first tree search.  That is, we search through all possible execution plans up to some length $n$, and then schedule the group of operators corresponding to the first step in the best plan we find (``best'' defined as the plan that schedules the most total operators in $n$ steps).  We then repeat this process on the remaining operators, until all operators have been scheduled.  For $n=1$ this corresponds to the greedy algorithm, and for $n=\infty$ we find the optimal plan (the plan with the shortest number of steps).  A reasonable value for $n$ depends on the complexity of the model and the available computational budget; however, we find that $n \approx 3$ works well in practice.
+
+\subsubsection{Sorting}
+
+Another important optimization concern is the order in which the \texttt{Signals} are arranged in memory.  Recall that \texttt{Signals} are combined into large TensorFlow \texttt{Variables}, and when we read from a \texttt{Signal} we are reading from some subset of indices within that \texttt{Variable}.  However, it is faster to read from a contiguous, in-order block of indices (e.g. 5, 6, 7, 8), rather than an arbitrary set of indices (e.g., 5, 10, 12, 20, or 5, 8, 7, 6).  So we want to try to arrange the \texttt{Signals} within the \texttt{Variables} such that \texttt{Signals} that are read by the same group of \texttt{Operators} are adjacent and in the same order as the \texttt{Operators}.
+
+% TODO: figure showing sorted vs unsorted reads
+
+The basic challenge is that we have many different groups of \texttt{Operators}, reading from possibly overlapping sets of \texttt{Signals}, such that reordering signals with respect to one group of \texttt{Operators} may break the contiguity with respect to a different set of \texttt{Operators}.  Another complication is that we need to worry about the order of the \texttt{Operators} within a group. That is, we can rearrange the \texttt{Operators} to promote efficient reads, rather than reordering the \texttt{Signals}.  This won't make a block of non-contiguous \texttt{Signals} contiguous, but it can change it from out-of-order to in-order set of indices.  For example, if the \texttt{Signals} are arranged in the order 4, 1, 2, 3, but we move the first \texttt{Operator} in the group (which reads from the \texttt{Signal} with index 4) to the end, and this becomes an in-order, efficient read.  The reason why we might want to rearrange \texttt{Operators}, rather than just changing the order of the \texttt{Signals}, is that that 4, 1, 2, 3 order may be an efficient order for a different group of \texttt{Operators} reading from an overlapping set of \texttt{Signals}.  However, a single group of \texttt{Operators} can also be reading from multiple blocks of \texttt{Signals}, meaning that if we change the order of the \texttt{Operators} we change the order of the reads within all of those \texttt{Signal} blocks (possibly changing some other block that used to be in-order to now be out-of-order).
+
+We end up with a complex constraint satisfaction problem, where we are trying to find the \texttt{Signal}/\texttt{Operator} ordering that will result in the best possible read performance. A perfect solution, where every read is a contiguous block, is usually not possible, nor is there an efficient algorithm for finding an optimal solution (that we know of).  We arrived at a solution that uses some heuristic prioritization and an iterative settling procedure to try to find an ordering that works well in practice.  
+
+The first step is to sort the \texttt{Signals} into contiguous blocks, without worrying about order.  The \texttt{Operators} are already arranged into groups, so for every \texttt{Signal}, we know all the read blocks that it belongs to.  We can then group all the \texttt{Signals} that participate in the same sets of read blocks.  We will call such a set of read blocks a meta-block.  If all the read blocks were non-overlapping, then every meta-block would contain a single read block; however, this is rarely the case.  Since the order of \texttt{Signals} within a meta-block does not matter (yet), we can reformulate the problem as sorting the meta-blocks into an order that ensures the underlying read blocks are as contiguous as possible.  A perfect sorting is usually not possible, so in general we prioritize the contiguity of larger blocks, as they are the more expensive read operations.
+
+% TODO: figure illustrating meta blocks
+
+% TODO: not convinced that these pseudocodes are more informative than the text description of the algorithm
+\begin{algorithm}
+\DontPrintSemicolon
+initialize list of all meta-blocks $M$\;
+initialize sorted list $S$ (empty)\;
+set active read block $a$ to be the largest read block\;
+set active meta-block $c$ to be any meta-block containing $a$\;
+\While{$M$ is not empty}{
+	$X \leftarrow \{m \in M \mid a \in m\}$\;
+	\uIf{$X = \emptyset$}{
+		$X \leftarrow M$\;
+		$a \leftarrow$ largest read block in $c$\;
+	}
+	$Y \leftarrow \{x \in X \mid c \subseteq x\}$\;
+	\uIf{$Y = \emptyset$}{
+		$Y \leftarrow X$\;
+	}
+	$Z \leftarrow \{y \in Y \mid | y \oplus c | \leq \min_{n \in Y} | n \oplus c |\}$\;
+	\While{|Z| > 1}{
+	  $m \leftarrow$ the next largest read block in $c$\;
+		$Z \leftarrow \{z \in Z \mid m \in z\}$\;
+	}
+	remove the remaining $z \in Z$ from $M$ and append it to $S$\;
+	$c \leftarrow z$\;
+}
+\caption{Meta-block sorting algorithm}
+\label{alg:metablocksort}
+\end{algorithm}
+
+Our meta-block sorting algorithm is shown in Algorithm~\ref{alg:metablocksort}.  Broadly speaking, this algorithm tries to find the next meta-block that best matches the last meta block we selected.  Matching is determined by narrowing down the set of remaining meta-blocks according to increasingly strict criteria: 1) any meta-blocks that contain the active read block (so that we know that at least the active block will end up being contiguous), 2) any meta-blocks that contain all the elements in the last meta-block, 3) the elements with minimal Hamming distance to the last meta-block, 4) the meta-block that contains the largest read blocks in the last meta-block.
+
+After the meta-block sorting process, the \texttt{Signals} are arranged into (semi) contiguous blocks of indices within the base \texttt{Variables}.  We then want to sort the \texttt{Operators} and \texttt{Signals} within each meta-block so that the indices are in increasing order.  Recall that because our \texttt{Signal} blocks overlap, and because a group of \texttt{Operators} can read from multiple \texttt{Signal} blocks, there is unlikely to be an ordering that satisfies all the constraints.  Again we prioritize larger read blocks.
+
+\begin{algorithm}
+\DontPrintSemicolon
+sort the list of read blocks $B$ by increasing order of size\;
+\For{$i = 1 \rightarrow n$}{
+	\For{$b \in B$}{
+		$O \leftarrow$ the set of \texttt{Operators} associated with $b$\;
+		sort $O$ to match the order of the \texttt{Signals} in $b$\;
+		$C \leftarrow$ the set of read blocks associated with $O$\;
+		\For{$c \in C$}{
+			sort the signals in $c$ to match the order of $O$\;
+		}
+	}
+	if the order of the \texttt{Signals}/\texttt{Operators} did not change, terminate early\;
+}
+\caption{Signal/Operator sorting algorithm}
+\label{alg:sigopsort}
+\end{algorithm}
+
+Algorithm~\ref{alg:sigopsort} cycles between two steps: 1) sort the \texttt{Operators} to match the order of a given \texttt{Signal} block $b$, 2) sort all the \texttt{Signal} blocks read by that group of \texttt{Operators} to match the new order of the \texttt{Operators} (this sorting is restricted such that it cannot change the meta-block order).  After step 1, we know that $b$ will be contiguous and in-order (assuming that the meta-block sorting algorithm was able to make $b$ contiguous).  However, imagine that our \texttt{Operator} group also reads from another block $c$.  Rearranging the order of the \texttt{Operators} may have put $c$ out of order, so we fix that in step 2.  
+
+Note, however, that there may be some other group of \texttt{Operators} that also reads from $b$ or $c$ (or some overlapping set).  Thus the sorting we just performed might have broken an earlier ordering we established for that other group of \texttt{Operators}.  That is why we iterate over the read blocks in increasing order of size; we know that later sortings will only break the ordering of earlier, and therefore smaller, blocks.  However, it is possible that after the \texttt{Signals} are reordered by a larger block (step 2), the \texttt{Operators} in a smaller block could be reordered to match that new \texttt{Signal} order (step 1).  That is why we perform multiple passes over the read blocks, to allow the smaller blocks to settle into orderings that are consistent with the larger blocks.
+
+\subsubsection{Simplification}
+
+Another optimization we perform is to simplify the \texttt{Operator} graph by checking for certain special case combinations of \texttt{Operators}.  For example, we can change $y\mathrel{+}=x*1$ to $y\mathrel{+}=x$ in order to save a multiplication, or if there is a \texttt{Copy} operation that moves data from $x$ to $y$, but the value of $x$ never changes, we can change that to a \texttt{Reset} operator that directly sets the value of $y$ to that constant value (saving a read).  These optimizations do not have a large impact relative to the merging/sorting, but they are also relatively simple and quick to perform.
+
+\section{Results}
+
+\subsection{Simulation speed}
+
+- effect of graph optimizations
+- backend comparisons
+- batching
+
+\subsection{Training examples}
+
+\subsubsection{Spiking MNIST}
+
+\subsubsection{Memory storage/retrieval}
+
+\section{Conclusion}
+
+\subsubsection*{Acknowledgments}
+
+TODO BU MURI
+
+\small
+
+\bibliographystyle{abbrvnat}
+% TODO: change this to manually include relevant entries
+\bibliography{D:/Documents/officesvn/papers/library_cleaned}
+
+\end{document}
