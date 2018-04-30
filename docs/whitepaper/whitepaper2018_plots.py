@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 import nengo
 import nengo_benchmarks
 import nengo_dl
+from nengo_dl import graph_optimizer
 import nengo_ocl
 import numpy as np
 import tensorflow as tf
@@ -38,7 +39,7 @@ def compare_backends(load_data=False):
     sim_time = 10.0
 
     if load_data:
-        with open("compare_backends_data.json", "rb") as f:
+        with open("compare_backends_data.pkl", "rb") as f:
             results = pickle.load(f)
     else:
         params = list(itertools.product(
@@ -86,7 +87,7 @@ def compare_backends(load_data=False):
 
             results.append(data)
 
-        with open("compare_backends_data.json", "wb") as f:
+        with open("compare_backends_data.pkl", "wb") as f:
             pickle.dump(results, f)
 
     # plotting
@@ -152,10 +153,10 @@ def build_spaun(dimensions):
 
 def compare_backends_spaun(load_data=False):
     backends = [nengo_dl, nengo_ocl, nengo]
-    d_range = [4]
+    d_range = [64, 128, 256]
 
     if load_data:
-        with open("compare_backends_spaun_data.json", "rb") as f:
+        with open("compare_backends_spaun_data.pkl", "rb") as f:
             results = pickle.load(f)
     else:
         params = list(itertools.product(d_range, backends))
@@ -170,12 +171,15 @@ def compare_backends_spaun(load_data=False):
                 net = build_spaun(dimensions)
 
             if backend == nengo_dl:
-                kwargs = {"unroll_simulation": 25,
+                kwargs = {"unroll_simulation": 50,
                           "minibatch_size": None,
                           "device": "/gpu:0",
                           "dtype": tf.float32,
                           "progress_bar": True
                           }
+                with net:
+                    nengo_dl.configure_settings(session_config={
+                        "gpu_options.allow_growth": True})
             elif backend == nengo:
                 kwargs = {"progress_bar": True,
                           "optimize": True}
@@ -194,8 +198,93 @@ def compare_backends_spaun(load_data=False):
             print("  %.2fx realtime" % (1. / data["speed"]))
             results.append(data)
 
-        with open("compare_backends_spaun_data.json", "wb") as f:
+        with open("compare_backends_spaun_data.pkl", "wb") as f:
             pickle.dump(results, f)
+
+    plt.figure()
+    for backend in backends:
+        plt.plot(d_range, filter_results(results, backend=backend.__name__),
+                 label=backend.__name__)
+    plt.legend()
+    plt.xlabel("dimensions")
+    plt.ylabel("real time / simulated time")
+
+    plt.show()
+
+
+def compare_optimizations(load_data):
+    dimensions = 4
+
+    # optimizations to apply (simplifications, merging, sorting, unroll)
+    params = [
+        (False, False, False, False),
+        (False, True, False, False),
+        (False, True, True, False),
+        (True, True, True, False),
+        (True, True, True, True)
+    ]
+    # params = itertools.product((False, True), repeat=4)
+
+    if load_data:
+        with open("compare_optimizations_data.pkl", "rb") as f:
+            results = pickle.load(f)
+    else:
+        net = build_spaun(dimensions)
+        # net = nengo_benchmarks.all_benchmarks["convolution"](
+        #     dimensions=dimensions, n_neurons=1024).model()
+        model = nengo.builder.Model(
+            dt=0.001, builder=nengo_dl.builder.NengoBuilder())
+        model.build(net)
+
+        results = []
+        for i, (simp, plan, sort, unro) in enumerate(params):
+            print("%d/%d: %s %s %s %s" % (i + 1, len(params), simp, plan, sort,
+                                          unro))
+            with net:
+                config = {}
+                if not simp:
+                    config["simplifications"] = []
+                if not plan:
+                    config["planner"] = graph_optimizer.greedy_planner # graph_optimizer.noop_planner
+                if not sort:
+                    config["sorter"] = graph_optimizer.noop_order_signals
+                nengo_dl.configure_settings(**config)
+
+            with nengo_dl.Simulator(
+                    None, model=model, unroll_simulation=50 if unro else 1,
+                    device="/gpu:0") as sim:
+                sim.run(0.1)
+
+                start = time.time()
+                sim.run(1.0)
+                data = {"speed": 1.0 / (time.time() - start),
+                        "dimensions": dimensions, "simplifications": simp,
+                        "planner": plan, "sorting": sort, "unroll": unro}
+
+            print("  %.2fx realtime" % (1. / data["speed"]))
+            results.append(data)
+
+        with open("compare_optimizations_data.pkl", "wb") as f:
+            pickle.dump(results, f)
+
+    plt.figure()
+    plt.bar(np.arange(len(results)), filter_results(results))
+    labels = ["none"]
+    for r in results[1:]:
+        lab = ""
+        if r["planner"]:
+            lab += "merging\n"
+        if r["sorting"]:
+            lab += "sorting\n"
+        if r["simplifications"]:
+            lab += "simplifications\n"
+        if r["unroll"]:
+            lab += "unrolling\n"
+        labels.append(lab)
+    plt.xticks(np.arange(len(results)), labels, rotation="vertical")
+    plt.ylabel("real time / simulated time")
+
+    plt.show()
 
 
 @click.command()
@@ -206,6 +295,8 @@ def main(plot, load):
         compare_backends(load_data=load)
     elif plot == "compare_backends_spaun":
         compare_backends_spaun(load_data=load)
+    elif plot == "compare_optimizations":
+        compare_optimizations(load_data=load)
 
 
 if __name__ == "__main__":
