@@ -82,8 +82,8 @@ def compare_backends(load, batch, reps):
                    in params]
 
     for r in range(reps):
-        print("REP %d" % r)
         print("=" * 30)
+        print("REP %d" % r)
         for i, (bench, n_neurons, dimensions, neuron_type,
                 backend) in enumerate(params):
             print("%d/%d: %s %s %s %s %s" % (
@@ -96,7 +96,8 @@ def compare_backends(load, batch, reps):
             conf = nengo.Config(nengo.Ensemble)
             conf[nengo.Ensemble].neuron_type = neuron_type
             with conf:
-                net = benchmark.model()
+                with benchmark.model() as net:
+                    nengo_dl.configure_settings(trainable=False)
 
             if "nengo_dl" in backend:
                 sim = nengo_dl.Simulator(
@@ -266,8 +267,8 @@ def compare_optimizations(load, reps):
     model.build(net)
 
     for r in range(reps):
-        print("REP %d" % r)
         print("=" * 30)
+        print("REP %d" % r)
         for i, (simp, plan, sort, unro) in enumerate(params):
             print("%d/%d: %s %s %s %s" % (i + 1, len(params), simp, plan, sort,
                                           unro))
@@ -505,7 +506,9 @@ def spiking_mnist():
 
 
 @main.command()
-def spa_optimization():
+@click.option("--load/--no-load", default=False)
+@click.option("--reps", default=10)
+def spa_optimization(load, reps):
     def get_binding_data(n_inputs, n_pairs, dims, seed, t_int, t_mem,
                          dt=0.001):
         int_steps = int(t_int / dt)
@@ -554,21 +557,6 @@ def spa_optimization():
 
         return roles, fills, cues, binding, memory, output, vocab
 
-    # def accuracy(sim, probe, vocab, targets, t_step=-1):
-    #     # provide a simulator instance, the probe being evaluated, the vocab,
-    #     # the target vectors, and the time step at which to evaluate
-    #
-    #     # get output at the given time step
-    #     output = sim.data[probe][:, t_step, :]
-    #
-    #     # compute similarity between each output and vocab item
-    #     sims = np.dot(vocab.vectors, output.T)
-    #     idxs = np.argmax(sims, axis=0)
-    #
-    #     # check that the output is most similar to the target
-    #     acc = np.mean(np.all(vocab.vectors[idxs] == targets[:, -1], axis=1))
-    #     return acc
-
     def accuracy(outputs, targets, vocab=None):
         vocab_vectors = tf.constant(vocab.vectors, dtype=tf.float32)
         output = outputs[:, -1, :]
@@ -580,184 +568,126 @@ def spa_optimization():
 
         return tf.reduce_mean(tf.cast(match, tf.float32))
 
-    def plot_retrieval_example(sim, vocab, example_input=0):
-        f, axes = plt.subplots(7, figsize=(10, 14), sharex=True, sharey=True)
+    def build_network(neurons_per_d, seed):
+        with nengo.Network(seed=seed) as net:
+            net.config[nengo.Ensemble].neuron_type = nengo.RectifiedLinear()
+            # net.config[nengo.Ensemble].gain = nengo.dists.Choice([1])
+            # net.config[nengo.Ensemble].bias = nengo.dists.Choice([0])
+            net.config[nengo.Ensemble].gain = nengo.dists.Uniform(0.5, 1)
+            net.config[nengo.Ensemble].bias = nengo.dists.Uniform(-0.1, 0.1)
+            net.config[nengo.Connection].synapse = None
 
-        axes[0].plot(sim.trange(), nengo.spa.similarity(
-            test_roles[example_input], vocab), color="black", alpha=0.2)
-        for i in range(n_pairs):
-            name = "ROLE_%d_%d" % (example_input, i)
-            axes[0].plot(sim.trange(), nengo.spa.similarity(
-                test_roles[example_input], vocab[name].v), label=name)
-        axes[0].legend(fontsize='x-small', loc='right')
-        axes[0].set_ylabel("Role Input")
+            net.role_inp = nengo.Node(np.zeros(dims))
+            net.fill_inp = nengo.Node(np.zeros(dims))
+            net.cue_inp = nengo.Node(np.zeros(dims))
 
-        axes[1].plot(sim.trange(), nengo.spa.similarity(
-            test_fills[example_input], vocab), color="black", alpha=0.2)
-        for i in range(n_pairs):
-            name = "FILLER_%d_%d" % (example_input, i)
-            axes[1].plot(sim.trange(), nengo.spa.similarity(
-                test_fills[example_input], vocab[name].v), label=name)
-        axes[1].legend(fontsize='x-small', loc='right')
-        axes[1].set_ylabel("Filler Input")
+            # circular convolution network to combine roles/fillers
+            cconv = nengo.networks.CircularConvolution(neurons_per_d, dims)
+            nengo.Connection(net.role_inp, cconv.input_a)
+            nengo.Connection(net.fill_inp, cconv.input_b)
 
-        axes[2].plot(sim.trange(), nengo.spa.similarity(
-            test_cues[example_input], vocab), color="black", alpha=0.2)
-        for i in range(n_pairs):
-            name = "ROLE_%d_%d" % (example_input, i)
-            axes[2].plot(sim.trange(), nengo.spa.similarity(
-                test_cues[example_input], vocab[name].v), label=name)
-        axes[2].legend(fontsize='x-small', loc='right')
-        axes[2].set_ylabel("Cue Input")
+            # memory network to store the role/filler pairs
+            memory = nengo.Ensemble(neurons_per_d * dims, dims)
+            tau = 0.01
+            nengo.Connection(cconv.output, memory, transform=tau / t_int,
+                             synapse=tau)
+            nengo.Connection(memory, memory, transform=1, synapse=tau)
 
-        axes[3].plot(sim.trange(), nengo.spa.similarity(
-            test_targets[example_input], vocab), color="black", alpha=0.2)
-        for i in range(n_pairs):
-            name = "FILLER_%d_%d" % (example_input, i)
-            axes[3].plot(sim.trange(), nengo.spa.similarity(
-                test_targets[example_input], vocab[name].v), label=name)
-        axes[3].legend(fontsize='x-small', loc='right')
-        axes[3].set_ylabel("Target Output")
+            # another circular convolution network to extract the cued filler
+            ccorr = nengo.networks.CircularConvolution(neurons_per_d, dims,
+                                                       invert_b=True)
+            nengo.Connection(memory, ccorr.input_a)
+            nengo.Connection(net.cue_inp, ccorr.input_b)
 
-        axes[4].plot(sim.trange(), nengo.spa.similarity(
-            sim.data[conv_probe][example_input], vocab), color="black",
-                     alpha=0.2)
-        for i in range(n_pairs):
-            name = "ROLE_%d_%d*FILLER_%d_%d" % (
-                example_input, i, example_input, i)
-            axes[4].plot(sim.trange(), nengo.spa.similarity(
-                sim.data[conv_probe][example_input], vocab.parse(name).v),
-                         label=name)
-        axes[4].legend(fontsize='x-small', loc='right')
-        axes[4].set_ylabel("Binding")
+            net.conv_probe = nengo.Probe(cconv.output, label="conv_probe")
+            net.memory_probe = nengo.Probe(memory, label="memory_probe")
+            net.output_probe = nengo.Probe(ccorr.output, label="output_probe")
 
-        axes[5].plot(sim.trange(), nengo.spa.similarity(
-            sim.data[memory_probe][example_input], vocab), color="black",
-                     alpha=0.5)
-        name = "+".join(
-            ["ROLE_%d_%d*FILLER_%d_%d" % (example_input, i, example_input, i)
-             for i in range(n_pairs)])
-        axes[5].plot(sim.trange(), nengo.spa.similarity(
-            sim.data[memory_probe][example_input], vocab.parse(name).v),
-                     label=name)
-        axes[5].legend(fontsize='x-small', loc='right')
-        axes[5].set_ylabel("Memory")
+        return net
 
-        axes[6].plot(sim.trange(), nengo.spa.similarity(
-            sim.data[output_probe][example_input], vocab), color="black",
-                     alpha=0.2)
-        for i in range(n_pairs):
-            name = "FILLER_%d_%d" % (example_input, i)
-            axes[6].plot(sim.trange(), nengo.spa.similarity(
-                sim.data[output_probe][example_input], vocab[name].v),
-                         label=name)
-        axes[6].legend(fontsize='x-small', loc='right')
-        axes[6].set_ylabel("Output")
-        axes[6].set_xlabel("time [s]")
+    # we'll define a slightly modified version of mean squared error that
+    # allows us to specify a weighting (so that we can specify a different
+    # weight for each probe)
+    def weighted_mse(output, target, weight=1):
+        target = tf.where(tf.is_nan(target), output, target)
+        return weight * tf.reduce_mean(tf.square(target - output))
 
-    seed = 0
     t_int = 0.01  # length of time to present each input pair
     t_mem = 0.03  # length of memorization period
     n_pairs = 2  # number of role/filler pairs in each input
-    t_run = n_pairs * t_int + t_mem  # total task time
     dims = 64  # dimensionality of semantic pointer vectors
-    neurons_per_d = 10
     minibatch_size = 64
+    optimizer = tf.train.RMSPropOptimizer(1e-4)
 
-    with nengo.Network(seed=seed) as net:
-        net.config[nengo.Ensemble].neuron_type = nengo.RectifiedLinear()
-        net.config[nengo.Ensemble].gain = nengo.dists.Choice([1])
-        net.config[nengo.Ensemble].bias = nengo.dists.Choice([0])
-        net.config[nengo.Connection].synapse = None
+    params = [5, 10, 15, 20]
 
-        role_inp = nengo.Node(np.zeros(dims))
-        fill_inp = nengo.Node(np.zeros(dims))
-        cue_inp = nengo.Node(np.zeros(dims))
+    if load:
+        with open("spa_optimization_data.pkl", "rb") as f:
+            results = pickle.load(f)
+    else:
+        results = [{"pre_retrieval": [], "post_retrieval": [], "pre_mse": [],
+                    "post_mse": [], "neurons_per_d": n} for n in params]
 
-        # circular convolution network to combine roles/fillers
-        cconv = nengo.networks.CircularConvolution(neurons_per_d, dims)
-        nengo.Connection(role_inp, cconv.input_a)
-        nengo.Connection(fill_inp, cconv.input_b)
+    for r in range(reps):
+        print("=" * 30)
+        print("REP %d" % r)
 
-        # memory network to store the role/filler pairs
-        memory = nengo.Ensemble(neurons_per_d * dims, dims)
-        tau = 0.01
-        nengo.Connection(cconv.output, memory, transform=tau / t_int,
-                         synapse=tau)
-        nengo.Connection(memory, memory, transform=1, synapse=tau)
+        seed = r
 
-        # another circular convolution network to extract the cued filler
-        ccorr = nengo.networks.CircularConvolution(neurons_per_d, dims,
-                                                   invert_b=True)
-        nengo.Connection(memory, ccorr.input_a)
-        nengo.Connection(cue_inp, ccorr.input_b)
-
-        conv_probe = nengo.Probe(cconv.output, label="conv_probe")
-        memory_probe = nengo.Probe(memory, label="memory_probe")
-        output_probe = nengo.Probe(ccorr.output, label="output_probe")
-
-    # generate test data
-    (test_roles, test_fills, test_cues, _, _, test_targets,
-     test_vocab) = get_binding_data(1024, n_pairs, dims, seed + 1, t_int,
-                                    t_mem)
-    test_inputs = {role_inp: test_roles, fill_inp: test_fills,
-                   cue_inp: test_cues}
-    test_outputs = {output_probe: test_targets}
-
-    with nengo_dl.Simulator(
-            net, seed=seed, minibatch_size=minibatch_size) as sim:
-        # sim.run(t_run, input_feeds=test_inputs)
-        # plot_retrieval_example(sim, test_vocab)
-
-        print('Retrieval accuracy: ',
-              sim.loss(test_inputs, test_outputs,
-                       partial(accuracy, vocab=test_vocab)))
-
-    do_training = True
-    if do_training:
         # generate training data
         (train_roles, train_fills, train_cues, train_binding, train_memory,
          train_targets, _) = get_binding_data(8000, n_pairs, dims, seed, t_int,
                                               t_mem)
-        train_inputs = {role_inp: train_roles, fill_inp: train_fills,
-                        cue_inp: train_cues}
-        # note: when training we'll add targets for the intermediate outputs
-        # as well, to help shape the training process
-        train_outputs = {output_probe: train_targets,
-                         conv_probe: train_binding,
-                         memory_probe: train_memory}
+        # generate test data
+        (test_roles, test_fills, test_cues, _, _, test_targets,
+         test_vocab) = get_binding_data(1024, n_pairs, dims, seed + 1, t_int,
+                                        t_mem)
 
-        # we'll define a slightly modified version of mean squared error that
-        # allows us to specify a weighting (so that we can specify a different
-        # weight for each probe)
-        def weighted_mse(output, target, weight=1):
-            target = tf.where(tf.is_nan(target), output, target)
-            return weight * tf.reduce_mean(tf.square(target - output))
+        acc = partial(accuracy, vocab=test_vocab)
 
-        with nengo_dl.Simulator(net, minibatch_size=minibatch_size,
-                                seed=seed) as sim:
-            optimizer = tf.train.RMSPropOptimizer(1e-4)
+        for i, n in enumerate(params):
+            print("neurons_per_d", n)
 
-            print('Test loss before: ',
-                  sim.loss(test_inputs, test_outputs, 'mse'))
-            sim.train(train_inputs, train_outputs, optimizer, n_epochs=10,
-                      objective={output_probe: weighted_mse,
-                                 conv_probe: partial(weighted_mse,
-                                                     weight=0.25),
-                                 memory_probe: partial(weighted_mse,
-                                                       weight=0.25)})
-            print('Test loss after: ',
-                  sim.loss(test_inputs, test_outputs, 'mse'))
+            net = build_network(n, seed)
+            train_inputs = {net.role_inp: train_roles,
+                            net.fill_inp: train_fills,
+                            net.cue_inp: train_cues}
+            train_outputs = {net.output_probe: train_targets,
+                             net.conv_probe: train_binding,
+                             net.memory_probe: train_memory}
 
-            print('Retrieval accuracy: ',
-                  sim.loss(test_inputs, test_outputs,
-                           partial(accuracy, vocab=test_vocab)))
+            test_inputs = {net.role_inp: test_roles, net.fill_inp: test_fills,
+                           net.cue_inp: test_cues}
+            test_outputs = {net.output_probe: test_targets}
 
-            sim.save_params('./mem_binding_params')
+            with nengo_dl.Simulator(
+                    net, seed=seed, minibatch_size=minibatch_size,
+                    progress_bar=False) as sim:
+                results[i]["pre_retrieval"] = sim.loss(
+                    test_inputs, test_outputs, acc)
+                print('pre retrieval:', results[i]["pre_retrieval"])
 
-    # plot_retrieval_example(sim, test_vocab)
+                results[i]["pre_mse"] = sim.loss(
+                    test_inputs, test_outputs, "mse")
+                print('pre mse:', results[i]["pre_mse"])
 
-    plt.show()
+                sim.train(train_inputs, train_outputs, optimizer, n_epochs=10,
+                          objective={net.output_probe: weighted_mse,
+                                     net.conv_probe: partial(weighted_mse,
+                                                             weight=0.25),
+                                     net.memory_probe: partial(weighted_mse,
+                                                               weight=0.25)})
+
+                results[i]["post_mse"] = sim.loss(
+                    test_inputs, test_outputs, "mse")
+                print('post mse:', results[i]["post_mse"])
+
+                results[i]["post_retrieval"] = sim.loss(
+                    test_inputs, test_outputs, acc)
+                print('post retrieval:', results[i]["post_retrieval"])
+
+        with open("spa_optimization_data.pkl", "wb") as f:
+            pickle.dump(results, f)
 
 
 @main.command()
