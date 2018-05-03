@@ -1,3 +1,4 @@
+from functools import partial
 import itertools
 import os
 import pickle
@@ -9,12 +10,14 @@ os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 import click
 import matplotlib.pyplot as plt
 import nengo
+from nengo import spa
 import nengo_benchmarks
 import nengo_dl
 from nengo_dl import graph_optimizer
 import nengo_ocl
 import numpy as np
 import tensorflow as tf
+from tensorflow.contrib.learn.python.learn.datasets import mnist
 
 sys.path.append("../../../../spaun")
 from _spaun.configurator import cfg
@@ -26,20 +29,43 @@ from _spaun.spaun_main import Spaun
 
 
 def filter_results(results, **kwargs):
-    return [1. / x["speed"] for x in results if
+    return [x["relative_time"] for x in results if
             all(x[k] == v for k, v in kwargs.items())]
 
 
-def compare_backends(load_data=False):
+def build_spaun(dimensions):
+    vocab.sp_dim = dimensions
+    cfg.mtr_arm_type = None
+
+    cfg.set_seed(1)
+    experiment.initialize('A', vis_data.get_image_ind,
+                          vis_data.get_image_label,
+                          cfg.mtr_est_digit_response_time, cfg.rng)
+    vocab.initialize(experiment.num_learn_actions, cfg.rng)
+    vocab.initialize_mtr_vocab(mtr_data.dimensions, mtr_data.sps)
+    vocab.initialize_vis_vocab(vis_data.dimensions, vis_data.sps)
+
+    return Spaun()
+
+
+@click.group()
+def main():
+    pass
+
+
+@main.command()
+@click.option("--load/--no-load", default=False)
+@click.option("--batch", default=1)
+def compare_backends(load, batch):
     benchmarks = ["comm_channel", "convolution", "learning"]
     n_range = [2048, 4096]
     d_range = [64, 128, 256]
     neuron_types = [nengo.RectifiedLinear(), nengo.LIF()]
-    backends = [nengo_dl, nengo_ocl, nengo]
+    backends = ["nengo_dl", "nengo_ocl", "nengo"]
     sim_time = 10.0
 
-    if load_data:
-        with open("compare_backends_data.pkl", "rb") as f:
+    if load:
+        with open("compare_backends_%d_data.pkl" % batch, "rb") as f:
             results = pickle.load(f)
     else:
         params = list(itertools.product(
@@ -50,7 +76,7 @@ def compare_backends(load_data=False):
                 backend) in enumerate(params):
             print("%d/%d: %s %s %s %s %s" % (
                 i + 1, len(params), bench, n_neurons, dimensions, neuron_type,
-                backend.__name__))
+                backend))
 
             benchmark = nengo_benchmarks.all_benchmarks[bench](
                 dimensions=dimensions, n_neurons=n_neurons, sim_time=sim_time)
@@ -60,38 +86,40 @@ def compare_backends(load_data=False):
             with conf:
                 net = benchmark.model()
 
-            if backend == nengo_dl:
-                kwargs = {"unroll_simulation": 25,
-                          "minibatch_size": None,
-                          "device": "/gpu:0",
-                          "dtype": tf.float32,
-                          "progress_bar": False
-                          }
-            elif backend == nengo:
-                kwargs = {"progress_bar": False,
-                          "optimize": True}
-            elif backend == nengo_ocl:
-                kwargs = {"progress_bar": None}
+            if "nengo_dl" in backend:
+                sim = nengo_dl.Simulator(
+                    net, unroll_simulation=25, minibatch_size=batch,
+                    device="/gpu:0", progress_bar=False)
+            elif backend == "nengo":
+                sim = nengo.Simulator(net, progress_bar=False, optimize=True)
+            elif backend == "nengo_ocl":
+                sim = nengo_ocl.Simulator(net, progress_bar=False)
 
-            with backend.Simulator(net, **kwargs) as sim:
+            with sim:
                 # run once to eliminate startup overhead
                 sim.run(0.1, progress_bar=False)
 
-                data = benchmark.evaluate(sim, progress_bar=False)
-                data.update(
-                    {"benchmark": bench, "n_neurons": n_neurons,
-                     "dimensions": dimensions, "neuron_type": neuron_type,
-                     "backend": backend.__name__})
+                start = time.time()
+                for b in range(1 if "nengo_dl" in backend else batch):
+                    if b > 0:
+                        sim.reset()
+                    sim.run(benchmark.sim_time, progress_bar=False)
+                data = {"relative_time": (time.time() - start) /
+                                         benchmark.sim_time,
+                        "benchmark": bench, "n_neurons": n_neurons,
+                        "dimensions": dimensions, "neuron_type": neuron_type,
+                        "backend": backend}
 
-            print("  %.2fx realtime" % (1. / data["speed"]))
+            print("  %.2fx realtime" % data["relative_time"])
 
             results.append(data)
 
-        with open("compare_backends_data.pkl", "wb") as f:
+        with open("compare_backends_%d_data.pkl" % batch, "wb") as f:
             pickle.dump(results, f)
 
     # plotting
-    f, axes = plt.subplots(1, 3, sharey=True, sharex=False, figsize=(15, 5))
+    f, axes = plt.subplots(1, len(benchmarks), sharey=True, sharex=False,
+                           figsize=(5 * len(benchmarks), 5))
     n_bars = len(d_range)
     neuron_type = nengo.RectifiedLinear()
     colours = plt.rcParams["axes.prop_cycle"].by_key()["color"]
@@ -120,12 +148,12 @@ def compare_backends(load_data=False):
                                  for t in d_range])
         for i, b in enumerate(backends):
             axes[k].annotate(
-                b.__name__, (((n_bars - 1) / 2 + (n_bars + 1) * i + 1) /
-                             ((n_bars + 1) * len(backends)),
-                             -0.1),
+                b, (((n_bars - 1) / 2 + (n_bars + 1) * i + 1) /
+                    ((n_bars + 1) * len(backends)),
+                    -0.1),
                 xycoords="axes fraction", ha="center")
 
-        axes[k].set_ylim([0, 10])
+        axes[k].set_ylim([0, 10 * batch])
         axes[k].set_xlim([-1, (n_bars + 1) * len(benchmarks) - 1])
 
         if k == 0:
@@ -133,139 +161,17 @@ def compare_backends(load_data=False):
 
     plt.tight_layout(rect=(0, 0.05, 1, 1))
 
+    plt.savefig("compare_backends_%d.pdf" % batch)
     plt.show()
 
 
-def compare_backends_batched(load_data):
-    benchmarks = ["comm_channel", "convolution", "learning"]
-    n_range = [2048, 4096]
-    d_range = [64, 128, 256]
-    neuron_types = [nengo.RectifiedLinear(), nengo.LIF()]
-    backends = [nengo_dl, nengo_ocl, nengo]
-    sim_time = 10.0
-
-    if load_data:
-        with open("compare_backends_data.pkl", "rb") as f:
-            results = pickle.load(f)
-    else:
-        params = list(itertools.product(
-            benchmarks, n_range, d_range, neuron_types, backends))
-
-        results = []
-        for i, (bench, n_neurons, dimensions, neuron_type,
-                backend) in enumerate(params):
-            print("%d/%d: %s %s %s %s %s" % (
-                i + 1, len(params), bench, n_neurons, dimensions,
-                neuron_type,
-                backend.__name__))
-
-            benchmark = nengo_benchmarks.all_benchmarks[bench](
-                dimensions=dimensions, n_neurons=n_neurons,
-                sim_time=sim_time)
-
-            conf = nengo.Config(nengo.Ensemble)
-            conf[nengo.Ensemble].neuron_type = neuron_type
-            with conf:
-                net = benchmark.model()
-
-            if backend == nengo_dl:
-                kwargs = {"unroll_simulation": 25,
-                          "minibatch_size": None,
-                          "device": "/gpu:0",
-                          "dtype": tf.float32,
-                          "progress_bar": False
-                          }
-            elif backend == nengo:
-                kwargs = {"progress_bar": False,
-                          "optimize": True}
-            elif backend == nengo_ocl:
-                kwargs = {"progress_bar": None}
-
-            with backend.Simulator(net, **kwargs) as sim:
-                # run once to eliminate startup overhead
-                sim.run(0.1, progress_bar=False)
-
-                data = benchmark.evaluate(sim, progress_bar=False)
-                data.update(
-                    {"benchmark": bench, "n_neurons": n_neurons,
-                     "dimensions": dimensions, "neuron_type": neuron_type,
-                     "backend": backend.__name__})
-
-            print("  %.2fx realtime" % (1. / data["speed"]))
-
-            results.append(data)
-
-        with open("compare_backends_data.pkl", "wb") as f:
-            pickle.dump(results, f)
-
-    # plotting
-    f, axes = plt.subplots(1, 3, sharey=True, sharex=False,
-                           figsize=(15, 5))
-    n_bars = len(d_range)
-    neuron_type = nengo.RectifiedLinear()
-    colours = plt.rcParams["axes.prop_cycle"].by_key()["color"]
-    for k, m in enumerate(benchmarks):
-        x_pos = np.arange(n_bars)
-        for j, b in enumerate(backends):
-            bottoms = np.zeros(n_bars)
-            c = 0
-            for n in n_range:
-                # for d in d_range:
-                data = filter_results(
-                    results, benchmark=m, neuron_type=neuron_type,
-                    n_neurons=n,
-                    backend=b.__name__)
-                axes[k].bar(x_pos, data, width=0.5, bottom=bottoms,
-                            color=colours[c])
-                bottoms += data
-                c += 1
-            x_pos += n_bars + 1
-
-        axes[k].set_title("%s" % m)
-        axes[k].legend(["N=%d" % n for n in n_range])
-        axes[k].set_xticks(np.concatenate(
-            [np.arange(i * (n_bars + 1), i * (n_bars + 1) + n_bars)
-             for i in range(len(backends))]))
-        axes[k].set_xticklabels([t for _ in range(len(backends))
-                                 for t in d_range])
-        for i, b in enumerate(backends):
-            axes[k].annotate(
-                b.__name__, (((n_bars - 1) / 2 + (n_bars + 1) * i + 1) /
-                             ((n_bars + 1) * len(backends)),
-                             -0.1),
-                xycoords="axes fraction", ha="center")
-
-        axes[k].set_ylim([0, 10])
-        axes[k].set_xlim([-1, (n_bars + 1) * len(benchmarks) - 1])
-
-        if k == 0:
-            axes[k].set_ylabel("real time / simulated time")
-
-    plt.tight_layout(rect=(0, 0.05, 1, 1))
-
-    plt.show()
-
-
-def build_spaun(dimensions):
-    vocab.sp_dim = dimensions
-    cfg.mtr_arm_type = None
-
-    cfg.set_seed(1)
-    experiment.initialize('A', vis_data.get_image_ind,
-                          vis_data.get_image_label,
-                          cfg.mtr_est_digit_response_time, cfg.rng)
-    vocab.initialize(experiment.num_learn_actions, cfg.rng)
-    vocab.initialize_mtr_vocab(mtr_data.dimensions, mtr_data.sps)
-    vocab.initialize_vis_vocab(vis_data.dimensions, vis_data.sps)
-
-    return Spaun()
-
-
-def compare_backends_spaun(load_data=False):
+@main.command()
+@click.option("--load/--no-load", default=False)
+def compare_backends_spaun(load):
     backends = [nengo_dl, nengo_ocl, nengo]
     d_range = [64, 128, 256]
 
-    if load_data:
+    if load:
         with open("compare_backends_spaun_data.pkl", "rb") as f:
             results = pickle.load(f)
     else:
@@ -302,7 +208,7 @@ def compare_backends_spaun(load_data=False):
                 sim_time = 1.0
                 start = time.time()
                 sim.run(sim_time)
-                data = {"speed": sim_time / (time.time() - start),
+                data = {"relative_time": (time.time() - start) / sim_time,
                         "backend": backend.__name__, "dimensions": dimensions}
 
             print("  %.2fx realtime" % (1. / data["speed"]))
@@ -322,7 +228,9 @@ def compare_backends_spaun(load_data=False):
     plt.show()
 
 
-def compare_optimizations(load_data):
+@main.command()
+@click.option("--load/--no-load", default=False)
+def compare_optimizations(load):
     dimensions = 4
 
     # optimizations to apply (simplifications, merging, sorting, unroll)
@@ -335,7 +243,7 @@ def compare_optimizations(load_data):
     ]
     # params = itertools.product((False, True), repeat=4)
 
-    if load_data:
+    if load:
         with open("compare_optimizations_data.pkl", "rb") as f:
             results = pickle.load(f)
     else:
@@ -355,7 +263,8 @@ def compare_optimizations(load_data):
                 if not simp:
                     config["simplifications"] = []
                 if not plan:
-                    config["planner"] = graph_optimizer.greedy_planner # graph_optimizer.noop_planner
+                    config[
+                        "planner"] = graph_optimizer.greedy_planner  # graph_optimizer.noop_planner
                 if not sort:
                     config["sorter"] = graph_optimizer.noop_order_signals
                 nengo_dl.configure_settings(**config)
@@ -365,9 +274,10 @@ def compare_optimizations(load_data):
                     device="/gpu:0") as sim:
                 sim.run(0.1)
 
+                sim_time = 1.0
                 start = time.time()
-                sim.run(1.0)
-                data = {"speed": 1.0 / (time.time() - start),
+                sim.run(sim_time)
+                data = {"relative_time": (time.time() - start) / sim_time,
                         "dimensions": dimensions, "simplifications": simp,
                         "planner": plan, "sorting": sort, "unroll": unro}
 
@@ -397,8 +307,10 @@ def compare_optimizations(load_data):
     plt.show()
 
 
-def compare_simplifications(load_data):
-    if load_data:
+@main.command()
+@click.option("--load/--no-load", default=False)
+def compare_simplifications(load):
+    if load:
         with open("compare_simplifications_data.pkl", "rb") as f:
             results = pickle.load(f)
     else:
@@ -440,15 +352,16 @@ def compare_simplifications(load_data):
                                         progress_bar=False) as sim:
                     sim.run(0.1, progress_bar=False)
 
+                    sim_time = 1.0
                     start = time.time()
-                    sim.run(1.0, progress_bar=False)
-                    times[j].append(time.time() - start)
+                    sim.run(sim_time, progress_bar=False)
+                    times[j].append((time.time() - start) / sim_time)
 
                     print("    ", min(times[j]), max(times[j]),
                           sum(times[j]) / len(times[j]))
 
             results = [
-                dict([("times", times[j])] + [
+                dict([("relative_time", times[j])] + [
                     (s.__name__, p[i]) for i, s in enumerate(simplifications)])
                 for j, p in enumerate(params)]
 
@@ -457,15 +370,398 @@ def compare_simplifications(load_data):
 
     for r in results:
         print([k for k, v in r.items() if v is True])
-        times = r["times"]
+        times = r["relative_time"]
         print("    ", min(times), max(times), sum(times) / len(times))
 
 
-@click.command()
-@click.argument("plot")
-@click.option("--load/--no-load", default=False)
-def main(plot, load):
-    globals()[plot](load_data=load)
+@main.command()
+def spiking_mnist():
+    data = mnist.read_data_sets("MNIST_data/", one_hot=True)
+    minibatch_size = 200
+
+    def build_network(neuron_type, ens_params):
+        with nengo.Network() as net:
+            nengo_dl.configure_settings(trainable=False)
+
+            inp = nengo.Node([0] * 28 * 28)
+
+            x = nengo_dl.tensor_layer(
+                inp, tf.layers.conv2d, shape_in=(28, 28, 1), filters=32,
+                kernel_size=3)
+            x = nengo_dl.tensor_layer(x, neuron_type, **ens_params)
+
+            x = nengo_dl.tensor_layer(
+                x, tf.layers.conv2d, shape_in=(26, 26, 32),
+                filters=64, kernel_size=3)
+            x = nengo_dl.tensor_layer(x, neuron_type, **ens_params)
+
+            x = nengo_dl.tensor_layer(
+                x, tf.layers.average_pooling2d, shape_in=(24, 24, 64),
+                pool_size=2, strides=2)
+
+            x = nengo_dl.tensor_layer(
+                x, tf.layers.conv2d, shape_in=(12, 12, 64),
+                filters=128, kernel_size=3)
+            x = nengo_dl.tensor_layer(x, neuron_type, **ens_params)
+
+            x = nengo_dl.tensor_layer(
+                x, tf.layers.average_pooling2d, shape_in=(10, 10, 128),
+                pool_size=2, strides=2)
+
+            x = nengo_dl.tensor_layer(x, tf.layers.dense, units=10)
+
+        return net, inp, x
+
+    # construct the network
+    net, inp, out = build_network(
+        # nengo_dl.SoftLIFRate(amplitude=0.01, sigma=0.001),
+        nengo.LIFRate(amplitude=0.01),
+        dict(max_rates=nengo.dists.Choice([100]),
+             intercepts=nengo.dists.Choice([0]))
+    )
+    with net:
+        out_p = nengo.Probe(out)
+
+    # construct the simulator
+    with nengo_dl.Simulator(net, minibatch_size=minibatch_size) as sim:
+        train_inputs = {inp: data.train.images[:, None, :]}
+        train_targets = {out_p: data.train.labels[:, None, :]}
+        test_inputs = {inp: data.test.images[:, None, :]}
+        test_targets = {out_p: data.test.labels[:, None, :]}
+
+        def objective(x, y):
+            return tf.nn.softmax_cross_entropy_with_logits_v2(
+                logits=x, labels=y)
+
+        opt = tf.train.RMSPropOptimizer(learning_rate=0.001)
+
+        def classification_error(outputs, targets):
+            return 100 * tf.reduce_mean(
+                tf.cast(tf.not_equal(tf.argmax(outputs[:, -1], axis=-1),
+                                     tf.argmax(targets[:, -1], axis=-1)),
+                        tf.float32))
+
+        print("error before training: %.2f%%" % sim.loss(
+            test_inputs, test_targets, classification_error))
+
+        do_training = True
+        if do_training:
+            # run training
+            sim.train(train_inputs, train_targets, opt, objective=objective,
+                      n_epochs=10)
+
+            # save the parameters to file
+            sim.save_params("./mnist_params")
+        else:
+            # load parameters
+            sim.load_params("./mnist_params")
+
+        print("error after training: %.2f%%" % sim.loss(
+            test_inputs, test_targets, classification_error))
+
+    # test performance with spiking neurons
+    net, inp, out = build_network(
+        nengo.LIF(amplitude=0.01),
+        dict(max_rates=nengo.dists.Choice([100]),
+             intercepts=nengo.dists.Choice([0]))
+    )
+    with net:
+        out_p = nengo.Probe(out, synapse=0.1)
+
+    with nengo_dl.Simulator(net, minibatch_size=minibatch_size,
+                            unroll_simulation=10) as sim:
+        sim.load_params("./mnist_params")
+
+        n_steps = 50
+        test_inputs_time = {
+            inp: np.tile(data.test.images[:, None, :], (1, n_steps, 1))}
+        test_targets_time = {out_p: np.tile(v, (1, n_steps, 1)) for v in
+                             test_targets.values()}
+
+        print("spiking neuron error: %.2f%%" % sim.loss(test_inputs_time,
+                                                        test_targets_time,
+                                                        classification_error))
+
+        sim.run_steps(n_steps, input_feeds={
+            inp: test_inputs_time[inp][:minibatch_size]})
+
+        for i in range(5):
+            plt.figure()
+            plt.subplot(1, 2, 1)
+            plt.imshow(np.reshape(data.test.images[i], (28, 28)))
+            plt.axis('off')
+
+            plt.subplot(1, 2, 2)
+            plt.plot(sim.trange(), sim.data[out_p][i])
+            plt.legend([str(i) for i in range(10)], loc="upper left")
+            plt.xlabel("time")
+
+    plt.show()
+
+
+@main.command()
+def spa_optimization():
+    def get_binding_data(n_inputs, n_pairs, dims, seed, t_int, t_mem,
+                         dt=0.001):
+        int_steps = int(t_int / dt)
+        mem_steps = int(t_mem / dt)
+        n_steps = int_steps * n_pairs + mem_steps
+
+        rng = np.random.RandomState(seed)
+        vocab = spa.Vocabulary(dimensions=dims, rng=rng, max_similarity=1)
+
+        # initialize arrays for input and output trajectories
+        roles = np.zeros((n_inputs, n_steps, dims))
+        fills = np.zeros((n_inputs, n_steps, dims))
+        cues = np.zeros((n_inputs, n_steps, dims))
+        binding = np.zeros((n_inputs, n_steps, dims))
+        memory = np.zeros((n_inputs, n_steps, dims))
+        output = np.zeros((n_inputs, n_steps, dims))
+
+        # iterate through examples to be generated, fill arrays
+        for n in range(n_inputs):
+            role_names = ["ROLE_%d_%d" % (n, i) for i in range(n_pairs)]
+            filler_names = ["FILLER_%d_%d" % (n, i) for i in range(n_pairs)]
+
+            # each role/filler pair is presented for t_int seconds
+            for i in range(n_pairs):
+                roles[n, i * int_steps:(i + 1) * int_steps] = vocab.parse(
+                    role_names[i]).v
+                fills[n, i * int_steps:(i + 1) * int_steps] = vocab.parse(
+                    filler_names[i]).v
+                binding[n, i * int_steps:(i + 1) * int_steps] = vocab.parse(
+                    "%s*%s" % (role_names[i], filler_names[i])).v
+
+            # randomly select a cue
+            cue_idx = rng.randint(n_pairs)
+
+            # cue is presented during the memorization period
+            cues[n, -mem_steps:, :] = vocab[role_names[cue_idx]].v
+
+            # the goal is to output the associated filler during the
+            # memorization phase
+            # note: we use nan for the target prior to the memorization phase,
+            # to indicate that it doesn't matter what the network output is
+            output[n, -mem_steps:, :] = vocab[filler_names[cue_idx]].v
+            output[n, :-mem_steps, :] = np.nan
+
+        memory[...] = np.cumsum(binding, axis=1) * dt / t_int
+
+        return roles, fills, cues, binding, memory, output, vocab
+
+    # def accuracy(sim, probe, vocab, targets, t_step=-1):
+    #     # provide a simulator instance, the probe being evaluated, the vocab,
+    #     # the target vectors, and the time step at which to evaluate
+    #
+    #     # get output at the given time step
+    #     output = sim.data[probe][:, t_step, :]
+    #
+    #     # compute similarity between each output and vocab item
+    #     sims = np.dot(vocab.vectors, output.T)
+    #     idxs = np.argmax(sims, axis=0)
+    #
+    #     # check that the output is most similar to the target
+    #     acc = np.mean(np.all(vocab.vectors[idxs] == targets[:, -1], axis=1))
+    #     return acc
+
+    def accuracy(outputs, targets, vocab=None):
+        vocab_vectors = tf.constant(vocab.vectors, dtype=tf.float32)
+        output = outputs[:, -1, :]
+        sims = tf.matmul(vocab_vectors, tf.transpose(output))
+        idxs = tf.argmax(sims, axis=0)
+        match = tf.reduce_all(tf.equal(
+            tf.gather(vocab_vectors, idxs), targets[:, -1]),
+            axis=1)
+
+        return tf.reduce_mean(tf.cast(match, tf.float32))
+
+    def plot_retrieval_example(sim, vocab, example_input=0):
+        f, axes = plt.subplots(7, figsize=(10, 14), sharex=True, sharey=True)
+
+        axes[0].plot(sim.trange(), nengo.spa.similarity(
+            test_roles[example_input], vocab), color="black", alpha=0.2)
+        for i in range(n_pairs):
+            name = "ROLE_%d_%d" % (example_input, i)
+            axes[0].plot(sim.trange(), nengo.spa.similarity(
+                test_roles[example_input], vocab[name].v), label=name)
+        axes[0].legend(fontsize='x-small', loc='right')
+        axes[0].set_ylabel("Role Input")
+
+        axes[1].plot(sim.trange(), nengo.spa.similarity(
+            test_fills[example_input], vocab), color="black", alpha=0.2)
+        for i in range(n_pairs):
+            name = "FILLER_%d_%d" % (example_input, i)
+            axes[1].plot(sim.trange(), nengo.spa.similarity(
+                test_fills[example_input], vocab[name].v), label=name)
+        axes[1].legend(fontsize='x-small', loc='right')
+        axes[1].set_ylabel("Filler Input")
+
+        axes[2].plot(sim.trange(), nengo.spa.similarity(
+            test_cues[example_input], vocab), color="black", alpha=0.2)
+        for i in range(n_pairs):
+            name = "ROLE_%d_%d" % (example_input, i)
+            axes[2].plot(sim.trange(), nengo.spa.similarity(
+                test_cues[example_input], vocab[name].v), label=name)
+        axes[2].legend(fontsize='x-small', loc='right')
+        axes[2].set_ylabel("Cue Input")
+
+        axes[3].plot(sim.trange(), nengo.spa.similarity(
+            test_targets[example_input], vocab), color="black", alpha=0.2)
+        for i in range(n_pairs):
+            name = "FILLER_%d_%d" % (example_input, i)
+            axes[3].plot(sim.trange(), nengo.spa.similarity(
+                test_targets[example_input], vocab[name].v), label=name)
+        axes[3].legend(fontsize='x-small', loc='right')
+        axes[3].set_ylabel("Target Output")
+
+        axes[4].plot(sim.trange(), nengo.spa.similarity(
+            sim.data[conv_probe][example_input], vocab), color="black",
+                     alpha=0.2)
+        for i in range(n_pairs):
+            name = "ROLE_%d_%d*FILLER_%d_%d" % (
+                example_input, i, example_input, i)
+            axes[4].plot(sim.trange(), nengo.spa.similarity(
+                sim.data[conv_probe][example_input], vocab.parse(name).v),
+                         label=name)
+        axes[4].legend(fontsize='x-small', loc='right')
+        axes[4].set_ylabel("Binding")
+
+        axes[5].plot(sim.trange(), nengo.spa.similarity(
+            sim.data[memory_probe][example_input], vocab), color="black",
+                     alpha=0.5)
+        name = "+".join(
+            ["ROLE_%d_%d*FILLER_%d_%d" % (example_input, i, example_input, i)
+             for i in range(n_pairs)])
+        axes[5].plot(sim.trange(), nengo.spa.similarity(
+            sim.data[memory_probe][example_input], vocab.parse(name).v),
+                     label=name)
+        axes[5].legend(fontsize='x-small', loc='right')
+        axes[5].set_ylabel("Memory")
+
+        axes[6].plot(sim.trange(), nengo.spa.similarity(
+            sim.data[output_probe][example_input], vocab), color="black",
+                     alpha=0.2)
+        for i in range(n_pairs):
+            name = "FILLER_%d_%d" % (example_input, i)
+            axes[6].plot(sim.trange(), nengo.spa.similarity(
+                sim.data[output_probe][example_input], vocab[name].v),
+                         label=name)
+        axes[6].legend(fontsize='x-small', loc='right')
+        axes[6].set_ylabel("Output")
+        axes[6].set_xlabel("time [s]")
+
+    seed = 0
+    t_int = 0.01  # length of time to present each input pair
+    t_mem = 0.03  # length of memorization period
+    n_pairs = 2  # number of role/filler pairs in each input
+    t_run = n_pairs * t_int + t_mem  # total task time
+    dims = 64  # dimensionality of semantic pointer vectors
+    neurons_per_d = 10
+    minibatch_size = 64
+
+    with nengo.Network(seed=seed) as net:
+        net.config[nengo.Ensemble].neuron_type = nengo.RectifiedLinear()
+        net.config[nengo.Ensemble].gain = nengo.dists.Choice([1])
+        net.config[nengo.Ensemble].bias = nengo.dists.Choice([0])
+        net.config[nengo.Connection].synapse = None
+
+        role_inp = nengo.Node(np.zeros(dims))
+        fill_inp = nengo.Node(np.zeros(dims))
+        cue_inp = nengo.Node(np.zeros(dims))
+
+        # circular convolution network to combine roles/fillers
+        cconv = nengo.networks.CircularConvolution(neurons_per_d, dims)
+        nengo.Connection(role_inp, cconv.input_a)
+        nengo.Connection(fill_inp, cconv.input_b)
+
+        # memory network to store the role/filler pairs
+        memory = nengo.Ensemble(neurons_per_d * dims, dims)
+        tau = 0.01
+        nengo.Connection(cconv.output, memory, transform=tau / t_int,
+                         synapse=tau)
+        nengo.Connection(memory, memory, transform=1, synapse=tau)
+
+        # another circular convolution network to extract the cued filler
+        ccorr = nengo.networks.CircularConvolution(neurons_per_d, dims,
+                                                   invert_b=True)
+        nengo.Connection(memory, ccorr.input_a)
+        nengo.Connection(cue_inp, ccorr.input_b)
+
+        conv_probe = nengo.Probe(cconv.output, label="conv_probe")
+        memory_probe = nengo.Probe(memory, label="memory_probe")
+        output_probe = nengo.Probe(ccorr.output, label="output_probe")
+
+    # generate test data
+    (test_roles, test_fills, test_cues, _, _, test_targets,
+     test_vocab) = get_binding_data(1024, n_pairs, dims, seed + 1, t_int,
+                                    t_mem)
+    test_inputs = {role_inp: test_roles, fill_inp: test_fills,
+                   cue_inp: test_cues}
+    test_outputs = {output_probe: test_targets}
+
+    with nengo_dl.Simulator(
+            net, seed=seed, minibatch_size=minibatch_size) as sim:
+        # sim.run(t_run, input_feeds=test_inputs)
+        # plot_retrieval_example(sim, test_vocab)
+
+        print('Retrieval accuracy: ',
+              sim.loss(test_inputs, test_outputs,
+                       partial(accuracy, vocab=test_vocab)))
+
+    do_training = True
+    if do_training:
+        # generate training data
+        (train_roles, train_fills, train_cues, train_binding, train_memory,
+         train_targets, _) = get_binding_data(8000, n_pairs, dims, seed, t_int,
+                                              t_mem)
+        train_inputs = {role_inp: train_roles, fill_inp: train_fills,
+                        cue_inp: train_cues}
+        # note: when training we'll add targets for the intermediate outputs
+        # as well, to help shape the training process
+        train_outputs = {output_probe: train_targets,
+                         conv_probe: train_binding,
+                         memory_probe: train_memory}
+
+        # we'll define a slightly modified version of mean squared error that
+        # allows us to specify a weighting (so that we can specify a different
+        # weight for each probe)
+        def weighted_mse(output, target, weight=1):
+            target = tf.where(tf.is_nan(target), output, target)
+            return weight * tf.reduce_mean(tf.square(target - output))
+
+        with nengo_dl.Simulator(net, minibatch_size=minibatch_size,
+                                seed=seed) as sim:
+            optimizer = tf.train.RMSPropOptimizer(1e-4)
+
+            print('Test loss before: ',
+                  sim.loss(test_inputs, test_outputs, 'mse'))
+            sim.train(train_inputs, train_outputs, optimizer, n_epochs=10,
+                      objective={output_probe: weighted_mse,
+                                 conv_probe: partial(weighted_mse,
+                                                     weight=0.25),
+                                 memory_probe: partial(weighted_mse,
+                                                       weight=0.25)})
+            print('Test loss after: ',
+                  sim.loss(test_inputs, test_outputs, 'mse'))
+
+            print('Retrieval accuracy: ',
+                  sim.loss(test_inputs, test_outputs,
+                           partial(accuracy, vocab=test_vocab)))
+
+            sim.save_params('./mem_binding_params')
+
+    # plot_retrieval_example(sim, test_vocab)
+
+    plt.show()
+
+
+@main.command()
+def all_figures():
+    compare_backends(False, 1)
+    compare_backends(False, 10)
+    compare_optimizations(False)
+    spiking_mnist()
+    spa_optimization()
 
 
 if __name__ == "__main__":

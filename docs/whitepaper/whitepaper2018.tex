@@ -256,6 +256,7 @@ Thus we can create a small computational subgraph consisting of reads, transform
 The final step is to embed this single timestep within a framework that will simulate the model over time.  For this we can use TensorFlow's \texttt{tf.while\_loop}, which is a way to represent a loop using TensorFlow's declarative programming style.  Generally speaking this will meet all of our needs, although some book-keeping is needed to make sure that computations from different timesteps do not overlap incorrectly.  The only concern is that \texttt{tf.while\_loop} adds a certain amount of overhead to every iteration, which can slow down the simulation.  Thus NengoDL has an option to unroll the simulation loop by explicitly building multiple timesteps into the TensorFlow computation graph.  Essentially we go through the same process as above to build a single timestep, then repeat that $n$ times so that we end up with $n$ implementations of every nengo \texttt{Operator} (all connected together in the correct order thanks to the \texttt{SignalDict}).  We then embed that whole thing within a \texttt{tf.while\_loop}, so that every iteration will execute $n$ timesteps.  This results in a more complicated TensorFlow graph, which increases the build time and memory usage, but can significantly improve the simulation speed.  This functionality is accessed through the \texttt{unroll\_simulation} parameter of \texttt{nengo\_dl.Simulator}, where \texttt{nengo\_dl.Simulator(net, unroll\_simulation=10)} indicates that we should unroll the simulation as above with $n=10$.
 
 \subsection{Graph optimizations}
+\label{sec:graphoptimizations}
 
 Naively implementing the above process results in a functional simulator, but a slow one.  The basic problem is that every time an \texttt{Op} like \texttt{tf.matmul} is executed TensorFlow has to launch a kernel, and there is a certain amount of associated overhead (especially when launching kernels on the GPU).  If we have many small kernel launches, any benefits of the underlying accelerator will be lost in that overhead.  So when building an efficient neural simulator in TensorFlow it is important that we try to combine operations as much as possible, so that we end up with fewer, larger kernels.  For example, imagine we have 10 \texttt{ElementwiseInc} operations, each reading two signals and multiplying them together.  Implemented individually, this would be 20 reads, 10 multiplies, and 10 writes.  It would be much better to combine those operations together into one large op that would do two reads, one multiply, and one write.
 
@@ -356,13 +357,27 @@ Another optimization we perform is to simplify the \texttt{Operator} graph by ch
 
 \section{Results}
 
+There are two areas we will focus on in the results: the simulation speed of NengoDL, and some practical demonstrations of using NengoDL to construct and optimize a neural model.  The code needed to reproduce any of the results presented here is available at \url{https://github.com/nengo/nengo-dl/tree/master/docs/whitepaper}. 
+
 \subsection{Simulation speed}
 
-- effect of graph optimizations
-- backend comparisons
-- batching
+We will compare the simulation speed of NengoDL to the default Nengo simulator (which is CPU only) as well as NengoOCL (a simulator that runs on the GPU using custom OpenCL kernels).  All results are collecting using a (TODO: CPU stats) and a (TODO: GPU stats) (in the case of NengoDL and NengoOCL).
 
-\subsection{Training examples}
+% unbatched speed figure
+
+Figure~X shows the relative speed of the simulators on three different benchmark models.  The code for all of the benchmark networks can be found at \url{https://github.com/nengo/nengo-benchmarks}.  The content/purpose of the models is not particularly important, they were simply chosen to showcase a range of different models with varying complexities.  Overall we can see that the GPU-based simulators (NengoDL and NengoOCL) offer significant performance improvements, with NengoOCL offering the best performance.  This is not surprising, given that NengoOCL has kernels that are custom written for simulating Nengo models, whereas in NengoDL we are using generic TensorFlow operations.
+
+% batched speed figure
+
+That being said, we can see an important advantage of NengoDL in Figure~X.  In this case we are running the same benchmarks, but we are running each model ten times.  With Nengo/NengoOCL, this involves serially running the model ten times in a row, which, unsurprisingly, takes about ten times as long.  However, NengoDL allows models to be run with batched inputs, so we can simulate the model once with ten different inputs in parallel.  This scales much better as we increase the batch size, thanks to the parallelism of the computations.  Thus if a modeller wants to test their model with a range of different inputs, NengoDL will probably offer the best performance.
+
+% optimizations figure
+
+Finally, it is interesting to explore the effect of the various graph optimization steps described in Section~\ref{sec:graphoptimizations}.
+
+\subsection{Model examples}
+
+Simulation speed is an important aspect of NengoDL, but equally important are the novel features NengoDL provides that are not available in any other simulators.  Specifically, a) the ability to insert TensorFlow components, such as convolutional layers, into a Nengo model, and b) the ability to optimize the parameters of a Nengo model using deep learning training methods.  In this section we will present some basic examples illustrating these features and the advantages they provide.
 
 \subsubsection{Spiking MNIST}
 
