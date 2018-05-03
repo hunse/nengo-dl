@@ -29,8 +29,8 @@ from _spaun.spaun_main import Spaun
 
 
 def filter_results(results, **kwargs):
-    return [x["relative_time"] for x in results if
-            all(x[k] == v for k, v in kwargs.items())]
+    return [x["relative_time"] if "relative_time" in x else x["times"]
+            for x in results if all(x[k] == v for k, v in kwargs.items())]
 
 
 def build_spaun(dimensions):
@@ -56,7 +56,8 @@ def main():
 @main.command()
 @click.option("--load/--no-load", default=False)
 @click.option("--batch", default=1)
-def compare_backends(load, batch):
+@click.option("--reps", default=10)
+def compare_backends(load, batch, reps):
     benchmarks = ["comm_channel", "convolution", "learning"]
     n_range = [2048, 4096]
     d_range = [64, 128, 256]
@@ -64,14 +65,22 @@ def compare_backends(load, batch):
     backends = ["nengo_dl", "nengo_ocl", "nengo"]
     sim_time = 10.0
 
+    params = list(itertools.product(
+        benchmarks, n_range, d_range, neuron_types, backends))
+
     if load:
         with open("compare_backends_%d_data.pkl" % batch, "rb") as f:
             results = pickle.load(f)
     else:
-        params = list(itertools.product(
-            benchmarks, n_range, d_range, neuron_types, backends))
+        results = [{"times": [], "benchmark": bench, "n_neurons": n_neurons,
+                    "dimensions": dimensions, "neuron_type": neuron_type,
+                    "backend": backend}
+                   for bench, n_neurons, dimensions, neuron_type, backend
+                   in params]
 
-        results = []
+    for r in range(reps):
+        print("REP %d" % r)
+        print("=" * 30)
         for i, (bench, n_neurons, dimensions, neuron_type,
                 backend) in enumerate(params):
             print("%d/%d: %s %s %s %s %s" % (
@@ -104,15 +113,10 @@ def compare_backends(load, batch):
                     if b > 0:
                         sim.reset()
                     sim.run(benchmark.sim_time, progress_bar=False)
-                data = {"relative_time": (time.time() - start) /
-                                         benchmark.sim_time,
-                        "benchmark": bench, "n_neurons": n_neurons,
-                        "dimensions": dimensions, "neuron_type": neuron_type,
-                        "backend": backend}
+                results[i]["times"].append((time.time() - start) / sim_time)
 
-            print("  %.2fx realtime" % data["relative_time"])
-
-            results.append(data)
+            print("   ", min(results[i]["times"]), max(results[i]["times"]),
+                  np.mean(results[i]["times"]))
 
         with open("compare_backends_%d_data.pkl" % batch, "wb") as f:
             pickle.dump(results, f)
@@ -129,10 +133,9 @@ def compare_backends(load, batch):
             bottoms = np.zeros(n_bars)
             c = 0
             for n in n_range:
-                # for d in d_range:
-                data = filter_results(
-                    results, benchmark=m, neuron_type=neuron_type, n_neurons=n,
-                    backend=b.__name__)
+                data = [np.mean(t) for t in filter_results(
+                    results, benchmark=m, neuron_type=neuron_type,
+                    n_neurons=n, backend=b)]
                 axes[k].bar(x_pos, data, width=0.5, bottom=bottoms,
                             color=colours[c])
                 bottoms += data
@@ -180,8 +183,8 @@ def compare_backends_spaun(load):
         results = []
         net = None
         for i, (dimensions, backend) in enumerate(params):
-            print("%d/%d: %s %s" % (
-                i + 1, len(params), backend.__name__, dimensions))
+            print("%d/%d: %s %s" % (i + 1, len(params), backend.__name__,
+                                    dimensions))
 
             if net is None or vocab.sp_dim != dimensions:
                 net = build_spaun(dimensions)
@@ -230,7 +233,8 @@ def compare_backends_spaun(load):
 
 @main.command()
 @click.option("--load/--no-load", default=False)
-def compare_optimizations(load):
+@click.option("--reps", default=10)
+def compare_optimizations(load, reps):
     dimensions = 4
 
     # optimizations to apply (simplifications, merging, sorting, unroll)
@@ -241,20 +245,26 @@ def compare_optimizations(load):
         (True, True, True, False),
         (True, True, True, True)
     ]
-    # params = itertools.product((False, True), repeat=4)
+    # params = list(itertools.product((False, True), repeat=4))
 
     if load:
         with open("compare_optimizations_data.pkl", "rb") as f:
             results = pickle.load(f)
     else:
-        net = build_spaun(dimensions)
-        # net = nengo_benchmarks.all_benchmarks["convolution"](
-        #     dimensions=dimensions, n_neurons=1024).model()
-        model = nengo.builder.Model(
-            dt=0.001, builder=nengo_dl.builder.NengoBuilder())
-        model.build(net)
+        results = [{"times": [], "simplifications": simp, "planner": plan,
+                    "sorting": sort, "unroll": unro}
+                   for simp, plan, sort, unro in params]
 
-        results = []
+    net = build_spaun(dimensions)
+    # net = nengo_benchmarks.all_benchmarks["convolution"](
+    #     dimensions=dimensions, n_neurons=1024).model()
+    model = nengo.builder.Model(
+        dt=0.001, builder=nengo_dl.builder.NengoBuilder())
+    model.build(net)
+
+    for r in range(reps):
+        print("REP %d" % r)
+        print("=" * 30)
         for i, (simp, plan, sort, unro) in enumerate(params):
             print("%d/%d: %s %s %s %s" % (i + 1, len(params), simp, plan, sort,
                                           unro))
@@ -277,18 +287,17 @@ def compare_optimizations(load):
                 sim_time = 1.0
                 start = time.time()
                 sim.run(sim_time)
-                data = {"relative_time": (time.time() - start) / sim_time,
-                        "dimensions": dimensions, "simplifications": simp,
-                        "planner": plan, "sorting": sort, "unroll": unro}
+                results[i]["times"].append((time.time() - start) / sim_time)
 
-            print("  %.2fx realtime" % (1. / data["speed"]))
-            results.append(data)
+            print("   ", min(results[i]["times"]), max(results[i]["times"]),
+                  np.mean(results[i]["times"]))
 
         with open("compare_optimizations_data.pkl", "wb") as f:
             pickle.dump(results, f)
 
     plt.figure()
-    plt.bar(np.arange(len(results)), filter_results(results))
+    plt.bar(np.arange(len(results)), [np.mean(t) for t in
+                                      filter_results(results)])
     labels = ["none"]
     for r in results[1:]:
         lab = ""
@@ -309,69 +318,62 @@ def compare_optimizations(load):
 
 @main.command()
 @click.option("--load/--no-load", default=False)
-def compare_simplifications(load):
+@click.option("--reps", default=10)
+def compare_simplifications(load, reps):
+    simplifications = [
+        graph_optimizer.remove_constant_copies,
+        graph_optimizer.remove_unmodified_resets,
+        graph_optimizer.remove_zero_incs,
+        graph_optimizer.remove_identity_muls
+    ]
+
+    params = list(
+        itertools.product((False, True), repeat=len(simplifications)))
+
     if load:
         with open("compare_simplifications_data.pkl", "rb") as f:
             results = pickle.load(f)
     else:
-        net = build_spaun(4)
-        model = nengo.builder.Model(
-            dt=0.001, builder=nengo_dl.builder.NengoBuilder())
-        model.build(net)
+        results = [
+            dict([("times", [])] + [
+                (s.__name__, p[i]) for i, s in enumerate(simplifications)])
+            for j, p in enumerate(params)]
 
-        simplifications = [
-            graph_optimizer.remove_constant_copies,
-            graph_optimizer.remove_unmodified_resets,
-            graph_optimizer.remove_zero_incs,
-            graph_optimizer.remove_identity_muls
-        ]
+    net = build_spaun(4)
+    model = nengo.builder.Model(
+        dt=0.001, builder=nengo_dl.builder.NengoBuilder())
+    model.build(net)
 
-        params = list(
-            itertools.product((False, True), repeat=len(simplifications)))
-        times = [[] for _ in params]
-        reps = 10
+    for r in range(reps):
+        print("=" * 30)
+        print("REP %d" % r)
 
-        for r in range(reps):
-            print("=" * 30)
-            print("REP %d" % r)
+        for j, p in enumerate(params):
+            simps = []
+            for i, s in enumerate(p):
+                if s:
+                    simps.append(simplifications[i])
 
-            for j, p in enumerate(params):
-                simps = []
-                for i, s in enumerate(p):
-                    if s:
-                        simps.append(simplifications[i])
+            with net:
+                nengo_dl.configure_settings(simplifications=simps)
 
-                with net:
-                    nengo_dl.configure_settings(simplifications=simps)
+            print("%d/%d" % (j + 1, len(params)), [x.__name__ for x in simps])
 
-                print("%d/%d" % (j + 1, len(params)),
-                      [x.__name__ for x in simps])
+            with nengo_dl.Simulator(
+                    None, model=model, unroll_simulation=1, device="/gpu:0",
+                    progress_bar=False) as sim:
+                sim.run(0.1, progress_bar=False)
 
-                with nengo_dl.Simulator(None, model=model, unroll_simulation=1,
-                                        device="/gpu:0",
-                                        progress_bar=False) as sim:
-                    sim.run(0.1, progress_bar=False)
+                sim_time = 1.0
+                start = time.time()
+                sim.run(sim_time, progress_bar=False)
+                results[j]["times"].append((time.time() - start) / sim_time)
 
-                    sim_time = 1.0
-                    start = time.time()
-                    sim.run(sim_time, progress_bar=False)
-                    times[j].append((time.time() - start) / sim_time)
+            print("   ", min(results[j]["times"]), max(results[j]["times"]),
+                  np.mean(results[j]["times"]))
 
-                    print("    ", min(times[j]), max(times[j]),
-                          sum(times[j]) / len(times[j]))
-
-            results = [
-                dict([("relative_time", times[j])] + [
-                    (s.__name__, p[i]) for i, s in enumerate(simplifications)])
-                for j, p in enumerate(params)]
-
-            with open("compare_simplifications_data.pkl", "wb") as f:
-                pickle.dump(results, f)
-
-    for r in results:
-        print([k for k, v in r.items() if v is True])
-        times = r["relative_time"]
-        print("    ", min(times), max(times), sum(times) / len(times))
+        with open("compare_simplifications_data.pkl", "wb") as f:
+            pickle.dump(results, f)
 
 
 @main.command()
