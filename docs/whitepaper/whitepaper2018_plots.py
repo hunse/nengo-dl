@@ -333,6 +333,9 @@ def compare_simplifications(load, reps):
     if load:
         with open("compare_simplifications_data.pkl", "rb") as f:
             results = pickle.load(f)
+        for r in results:
+            r["times"] = r["relative_time"]
+            del r["relative_time"]
     else:
         results = [
             dict([("times", [])] + [
