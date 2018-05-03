@@ -45,7 +45,10 @@ def build_spaun(dimensions):
     vocab.initialize_mtr_vocab(mtr_data.dimensions, mtr_data.sps)
     vocab.initialize_vis_vocab(vis_data.dimensions, vis_data.sps)
 
-    return Spaun()
+    with Spaun() as net:
+        nengo_dl.configure_settings(trainable=False)
+
+    return net
 
 
 @click.group()
@@ -333,9 +336,6 @@ def compare_simplifications(load, reps):
     if load:
         with open("compare_simplifications_data.pkl", "rb") as f:
             results = pickle.load(f)
-        for r in results:
-            r["times"] = r["relative_time"]
-            del r["relative_time"]
     else:
         results = [
             dict([("times", [])] + [
