@@ -628,7 +628,8 @@ def spa_optimization(load, reps):
         results = [{"pre_retrieval": [], "post_retrieval": [], "pre_mse": [],
                     "post_mse": [], "neurons_per_d": n} for n in params]
 
-    for r in range(reps):
+    n_results = len(results[0]["pre_retrieval"])
+    for r in range(n_results, n_results + reps):
         print("=" * 30)
         print("REP %d" % r)
 
@@ -663,13 +664,13 @@ def spa_optimization(load, reps):
             with nengo_dl.Simulator(
                     net, seed=seed, minibatch_size=minibatch_size,
                     progress_bar=False) as sim:
-                results[i]["pre_retrieval"] = sim.loss(
-                    test_inputs, test_outputs, acc)
-                print('pre retrieval:', results[i]["pre_retrieval"])
+                results[i]["pre_retrieval"].append(sim.loss(
+                    test_inputs, test_outputs, acc))
+                print('pre retrieval:', results[i]["pre_retrieval"][-1])
 
-                results[i]["pre_mse"] = sim.loss(
-                    test_inputs, test_outputs, "mse")
-                print('pre mse:', results[i]["pre_mse"])
+                results[i]["pre_mse"].append(sim.loss(
+                    test_inputs, test_outputs, "mse"))
+                print('pre mse:', results[i]["pre_mse"][-1])
 
                 sim.train(train_inputs, train_outputs, optimizer, n_epochs=10,
                           objective={net.output_probe: weighted_mse,
@@ -678,13 +679,13 @@ def spa_optimization(load, reps):
                                      net.memory_probe: partial(weighted_mse,
                                                                weight=0.25)})
 
-                results[i]["post_mse"] = sim.loss(
-                    test_inputs, test_outputs, "mse")
-                print('post mse:', results[i]["post_mse"])
+                results[i]["post_mse"].append(sim.loss(
+                    test_inputs, test_outputs, "mse"))
+                print('post mse:', results[i]["post_mse"][-1])
 
-                results[i]["post_retrieval"] = sim.loss(
-                    test_inputs, test_outputs, acc)
-                print('post retrieval:', results[i]["post_retrieval"])
+                results[i]["post_retrieval"].append(sim.loss(
+                    test_inputs, test_outputs, acc))
+                print('post retrieval:', results[i]["post_retrieval"][-1])
 
         with open("spa_optimization_data.pkl", "wb") as f:
             pickle.dump(results, f)
