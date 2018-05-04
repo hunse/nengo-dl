@@ -689,6 +689,15 @@ def spa_optimization(load, reps):
         with open("spa_optimization_data.pkl", "wb") as f:
             pickle.dump(results, f)
 
+    plt.figure()
+    plt.plot(params, [r["pre_retrieval"] for r in results])
+    plt.plot(params, [r["post_retrieval"] for r in results])
+    plt.xlabel("neurons per dimension")
+    plt.ylabel("retrieval accuracy")
+    plt.legend(["before training", "after training"])
+
+    plt.show()
+
 
 @main.command()
 def all_figures():
