@@ -27,6 +27,7 @@
 \usepackage{microtype}      % microtypography
 \usepackage{listings}       % code with syntax highlighting
 \usepackage[ruled,vlined]{algorithm2e} % for pseudocode algorithms
+\usepackage{graphicx}
 
 \title{NengoDL: Combining deep learning and neural modelling methods}
 
@@ -395,7 +396,13 @@ In the second example we want to explore the application of the NengoDL training
 The network consists of a circular convolution network (to combine the attribute--value pairs into a linked representation), a recurrently connected ensemble of neurons to implement the memory, and a final circular convolution network to extract the cued attribute from the memory.  We can construct this model, without NengoDL, by using the optimization methods of the Neural Engineering Framework \citep[NEF;][]{Eliasmith2005}.  The advantage of the NEF is that it is fast and does not rely on gradient descent (and therefore require the model to be differentiable).  However, the NEF can only optimize the output weights of a single layer of neurons.  This means that each layer in the above model is optimized independently, and there are many parameters (e.g. input weights, gains, and biases) that are not optimized (they are typically chosen from some random distribution).  By using NengoDL we can begin with the NEF optimized model, and then apply the deep learning optimization on top of that.  This allows us to jointly optimize across the layers of the model, and fine tune all the parameters in the model as well as the output weights.
 
 We train the model by generating a randomized set of training data, with different sequences of attribute--value pairs and different vector vocabularies.  For each of these inputs we can specify what the correct model output would be.  We can then use TensorFlow's gradient-descent based optimizers (in this case, RMSProp \citealt{needcitation}) to optimize all the parameters of the model with respect to those inputs and target outputs.  The details of the training hyperparameters can be found in the code at \url{TODO}.
-% insert figure
+
+\begin{figure}
+\centering
+\includegraphics[width=0.9\textwidth]{spa_optimization.pdf}
+\caption{Retrieval accuracy on the memory task, before and after training is applied.}
+\label{fig:spa_optimization}
+\end{figure}
 
 The effect of the training is shown in Figure~X.  This figure shows the retrieval accuracy of the model, which is computed by comparing the output of the model (which should be the value of the cued attribute) to all the vectors in the vocabulary ($colour$, $shape$, $red$, $circle$, etc.).  If the output of the model is most similar to the correct answer, then that is a successful retrieval.  We can see that the performance of the model is significantly improved after applying the NengoDL training.  In particular we can see the impact of the training for smaller numbers of neurons.  This makes sense given the random initialization of many of the neural parameters under the NEF methods. For larger numbers of neurons that random initialization is likely to give a good-enough coverage of the parameter space, but for smaller numbers it is more important that those parameters be fine-tuned for the problem.  In other words, one important advantage of the NengoDL optimization features are that they allow us to take better advantage of limited neural resources.
 

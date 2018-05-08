@@ -33,6 +33,15 @@ def filter_results(results, **kwargs):
             for x in results if all(x[k] == v for k, v in kwargs.items())]
 
 
+def bootstrap_ci(data, alpha=0.95, n_samples=1000):
+    samples = sorted(
+        np.mean(np.random.choice(data, replace=True, size=len(data)))
+        for _ in range(n_samples))
+    lower = int(n_samples * (1 - alpha) / 2)
+    upper = int(n_samples * (alpha + (1 - alpha) / 2))
+    return samples[lower], samples[upper]
+
+
 def build_spaun(dimensions):
     vocab.sp_dim = dimensions
     cfg.mtr_arm_type = None
@@ -323,7 +332,8 @@ def compare_optimizations(load, reps):
 @main.command()
 @click.option("--load/--no-load", default=False)
 @click.option("--reps", default=10)
-def compare_simplifications(load, reps):
+@click.option("--dimensions", default=4)
+def compare_simplifications(load, reps, dimensions):
     simplifications = [
         graph_optimizer.remove_constant_copies,
         graph_optimizer.remove_unmodified_resets,
@@ -343,7 +353,7 @@ def compare_simplifications(load, reps):
                 (s.__name__, p[i]) for i, s in enumerate(simplifications)])
             for j, p in enumerate(params)]
 
-    net = build_spaun(4)
+    net = build_spaun(dimensions)
     model = nengo.builder.Model(
         dt=0.001, builder=nengo_dl.builder.NengoBuilder())
     model.build(net)
@@ -622,7 +632,7 @@ def spa_optimization(load, reps):
     params = [5, 10, 15, 20]
 
     if load:
-        with open("spa_optimization_data.pkl", "rb") as f:
+        with open("spa_optimization_data_saved.pkl", "rb") as f:
             results = pickle.load(f)
     else:
         results = [{"pre_retrieval": [], "post_retrieval": [], "pre_mse": [],
@@ -691,11 +701,16 @@ def spa_optimization(load, reps):
             pickle.dump(results, f)
 
     plt.figure()
-    plt.plot(params, [r["pre_retrieval"] for r in results])
-    plt.plot(params, [r["post_retrieval"] for r in results])
+    plt.plot(params, [np.mean(r["pre_retrieval"]) for r in results])
+    plt.fill_between(params, *zip(*[bootstrap_ci(r["pre_retrieval"])
+                                    for r in results]), alpha=0.5)
+    plt.plot(params, [np.mean(r["post_retrieval"]) for r in results])
+    plt.fill_between(params, *zip(*[bootstrap_ci(r["post_retrieval"])
+                                    for r in results]), alpha=0.5)
     plt.xlabel("neurons per dimension")
     plt.ylabel("retrieval accuracy")
     plt.legend(["before training", "after training"])
+    plt.savefig("spa_optimization.pdf")
 
     plt.show()
 
