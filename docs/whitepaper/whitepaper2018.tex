@@ -53,12 +53,12 @@
 \maketitle
 
 \begin{abstract}
-  TODO
+NengoDL is a software framework designed to combine the strengths of biological neural modelling and deep learning.  NengoDL allows users to construct biologically detailed neural models, intermix those models with deep learning elements (such as convolutional networks), and then efficiently simulate those models in an easy-to-use, unified framework.  In addition, NengoDL allows users to apply deep learning training methods to optimize the parameters of biological neural models.  In this paper we present basic usage examples, benchmarking, and details on the key implementation elements of NengoDL.  More details can be found at \url{https://www.nengo.ai/nengo-dl}.
 \end{abstract}
 
 \section{Introduction}
 
-Deep learning and biological neural modelling share many methodological similarities; at their core, they are concerned with how groups of neurons communicating via connection weights can carry out some function of interest.  However, despite these computational similarities researchers in the respective fields tend to be interested in different kinds of questions.  We usually think of deep learning in terms of abstract nonlinear optimization problems/methods, and practitioners are rarely concerned with applying those methods to the study of the brain (with exceptions, e.g. \citet{Kriegeskorte2015,Yamins2016}).  Correspondingly, there is a perception among neural modellers that deep learning methods are limited to abstract applications of artificial neural networks, and not of great help to those interested in studying how the brain works \citep{Kay2017}.
+Deep learning and biological neural modelling share many methodological similarities; at their core, they are concerned with how groups of neurons, communicating via connection weights, can carry out some function of interest.  However, despite these computational similarities researchers in the respective fields tend to be isolated from one another.  We usually think of deep learning in terms of abstract nonlinear optimization problems/methods, and practitioners are rarely concerned with applying those methods to the study of the brain (with exceptions, e.g. \citet{Kriegeskorte2015,Yamins2016}).  Correspondingly, there is a perception among neural modellers that deep learning methods are limited to abstract applications of artificial neural networks, and not of great help to those interested in studying how the brain works \citep{Kay2017}.
 
 One significant outcome of this divide is that the tools of the two fields have become quite isolated.  Deep learning researchers use, e.g., TensorFlow \citep{Abadi2016}, Theano \citep{Team2016}, Caffe \citep{Jia2014}, or Torch \citep{Collobert2011}, while neural modellers use, e.g., Nengo \citep{Bekolay2014}, Brian \citep{Stimberg2013}, NEST \citep{Gewaltig2007}, or PyNN \citep{Davison2009}. There is very little overlap between the two groups of users.
 
@@ -70,9 +70,15 @@ Our aim with NengoDL is to provide a tool that brings these two worlds together.
 \item Make it easy to construct hybrid models (e.g., inserting convolutional layers into a neural model)
 \end{itemize}
 
+In Section~\ref{sec:background} we will discuss the two tools that form the basis of NengoDL, Nengo and TensorFlow.  Section~\ref{sec:usage} explains the basic features of NengoDL, with usage examples.  Section~\ref{sec:implementation} dives into the underlying implementation of NengoDL.  Finally, Section~\ref{sec:results} presents some benchmarking data, as well as results from some more complicated examples.
+
+All of the source code for NengoDL can be found at \url{https://github.com/nengo/nengo-dl}, and installation instructions, more examples, and API descriptions can be found in the documentation at \url{https://www.nengo.ai/nengo-dl}.
+
 \subsection{Related work}
 
-??
+As mentioned, NengoDL sits at the intersection between deep learning and neural modelling tools, combining Nengo \citep{Bekolay2014} and TensorFlow \citep{Abaddi2016}.  The relationship of those tools to their respective fields is better described in their own papers, we will not attempt to reiterate that here.  With regards to NengoDL itself, we are not aware of any similar tools that have attempted to combine deep learning and neural modelling methods.  There has been work at the intersection of deep learning and neural modelling \citep[e.g.,][]{Esser2015,Hunsberger2015,Kriegeskorte2015,Yamins2016,Lee2016}, which often involves developing specific software/hardware implementations that combine methods from the two fields. However, none of these efforts have attempted to develop a general modelling tool for others to use.
+
+The most closely related work is the ``SNN Toolbox'' \citep{Rueckauer2017}.  The goal of that tool is to take a network constructed and trained using one of the deep learning tools (e.g. Theano or Caffe), and convert it into a special form of spiking neural network that will be able to match the performance of the source network as closely as possible.  Although this is something a user can do in NengoDL (e.g., see Section~\ref{sec:spiking_mnist}), the scope of NengoDL is more general.  In addition to supporting deep learning style networks, with NengoDL we are able to construct neuromorphic models (including spiking neural models), and support the simulation and optimization of both types of model (or mixtures of the two) in a unified framework.
 
 \section{Background}
 \label{sec:background}
@@ -164,6 +170,7 @@ There are two key features of TensorFlow that we take advantage of in NengoDL:
 To summarize, once we are able to accurately translate a Nengo model into a TensorFlow computation graph, we are able to automatically differentiate our Nengo models and get significant improvements in simulation speed.
 
 \section{Using NengoDL}
+\label{sec:usage}
 
 We will begin by describing the features/usage of NengoDL from a user perspective; the next section will go into more detail on how NengoDL is implemented.  Our goal here is not to provide a manual for NengoDL; that purpose is better served by the documentation, available at \url{https://www.nengo.ai/nengo-dl}.  Instead we will focus, at a relatively high level, on what users can do with NengoDL, in order to frame the upcoming implementation description.
 
@@ -236,6 +243,7 @@ NengoDL also provides the the \texttt{nengo\_dl.tensor\_layer} function, an alte
 In these simple examples we could have easily achieved the same result using normal Nengo objects.  However, more complicated deep learning network architectures may not be easily expressed through the Nengo API, which is where the value of \texttt{TensorNodes} becomes more apparent.  See \url{https://www.nengo.ai/nengo-dl/examples/pretrained_model} for a more in-depth example.  More details on the features of \texttt{TensorNodes} can be found at \url{https://www.nengo.ai/nengo-dl/tensor_node}.
 
 \section{Implementation}
+\label{sec:implementation}
 
 We will now dive into more detail on how NengoDL is implemented.  Knowledge of this infrastructure is not required to use NengoDL, but is helpful for advanced users who want to do something like add new NengoDL neuron models.  The implementation also showcases some somewhat esoteric uses of TensorFlow, which may be of interest to other TensorFlow users.
 
