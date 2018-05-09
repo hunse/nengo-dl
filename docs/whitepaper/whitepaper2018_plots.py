@@ -73,7 +73,7 @@ def compare_backends(load, batch, reps):
     benchmarks = ["comm_channel", "convolution", "learning"]
     n_range = [2048, 4096]
     d_range = [64, 128, 256]
-    neuron_types = [nengo.RectifiedLinear(), nengo.LIF()]
+    neuron_types = [nengo.RectifiedLinear()]
     backends = ["nengo_dl", "nengo_ocl", "nengo"]
     sim_time = 10.0
 
