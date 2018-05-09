@@ -283,7 +283,14 @@ def compare_optimizations(load, reps):
                                           unro))
             with net:
                 config = {}
-                if not simp:
+                if simp:
+                    config["simplifications"] = [
+                        graph_optimizer.remove_constant_copies,
+                        graph_optimizer.remove_unmodified_resets,
+                        # graph_optimizer.remove_zero_incs,
+                        graph_optimizer.remove_identity_muls
+                    ]
+                else:
                     config["simplifications"] = []
                 if not plan:
                     config[
