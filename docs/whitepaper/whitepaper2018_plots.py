@@ -90,7 +90,8 @@ def compare_backends(load, batch, reps):
                    for bench, n_neurons, dimensions, neuron_type, backend
                    in params]
 
-    for r in range(reps):
+    n_results = len(results[0]["times"])
+    for r in range(n_results, n_results + reps):
         print("=" * 30)
         print("REP %d" % r)
         for i, (bench, n_neurons, dimensions, neuron_type,
