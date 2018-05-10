@@ -395,13 +395,23 @@ There are two areas we will focus on in the results: the simulation speed of Nen
 
 We will compare the simulation speed of NengoDL to the default Nengo simulator (which is CPU only) as well as NengoOCL (a simulator that runs on the GPU using custom OpenCL kernels).  All results are collecting using a (TODO: CPU stats) and a (TODO: GPU stats) (in the case of NengoDL and NengoOCL).
 
-% unbatched speed figure
+\begin{figure}
+\centering
+\includegraphics[width=\textwidth]{compare_backends_1.pdf}
+\caption{Comparing simulation speed of NengoDL versus NengoOCL versus Nengo.  Analyzing scaling with respect to the represented dimensionality (64, 128, 256) versus number of neurons per ensemble (2048, 4096).}
+\label{fig:compare_backends_1}
+\end{figure}
 
-Figure~X shows the relative speed of the simulators on three different benchmark models.  The code for all of the benchmark networks can be found at \url{https://github.com/nengo/nengo-benchmarks}.  The content/purpose of the models is not particularly important, they were simply chosen to showcase a range of different models with varying complexities.  Overall we can see that the GPU-based simulators (NengoDL and NengoOCL) offer significant performance improvements, with NengoOCL offering the best performance.  This is not surprising, given that NengoOCL has kernels that are custom written for simulating Nengo models, whereas in NengoDL we are using generic TensorFlow operations.
+Figure~\ref{fig:compare_backends_1} shows the relative speed of the simulators on three different benchmark models.  The code for all of the benchmark networks can be found at \url{https://github.com/nengo/nengo-benchmarks}.  The content/purpose of the models is not particularly important, they were simply chosen to showcase a range of different models with varying complexities.  Overall we can see that the GPU-based simulators (NengoDL and NengoOCL) offer significant performance improvements, with NengoOCL offering the best performance.  This is not surprising, given that NengoOCL has kernels that are custom written for simulating Nengo models, whereas in NengoDL we are using generic TensorFlow operations.
 
-% batched speed figure
+\begin{figure}
+\centering
+\includegraphics[width=\textwidth]{compare_backends_1.pdf}
+\caption{Comparing simulation speed of NengoDL versus NengoOCL versus Nengo with 10 batched input.  Analyzing scaling with respect to the represented dimensionality (64, 128, 256) versus number of neurons per ensemble (2048, 4096).}
+\label{fig:compare_backends_10}
+\end{figure}
 
-That being said, we can see an important advantage of NengoDL in Figure~X.  In this case we are running the same benchmarks, but we are running each model ten times.  With Nengo/NengoOCL, this involves serially running the model ten times in a row, which, unsurprisingly, takes about ten times as long.  However, NengoDL allows models to be run with batched inputs, so we can simulate the model once with ten different inputs in parallel.  This scales much better as we increase the batch size, thanks to the parallelism of the computations.  Thus if a modeller wants to test their model with a range of different inputs, NengoDL will probably offer the best performance.
+That being said, we can see an important advantage of NengoDL in Figure~\ref{fig:compare_backends_10}.  In this case we are running the same benchmarks, but we are running each model ten times.  With Nengo/NengoOCL this involves serially running the model ten times in a row, which, unsurprisingly, takes about ten times as long.  However, NengoDL allows models to be run with batched inputs, so we can simulate the model once with ten different inputs in parallel.  This scales much better as we increase the batch size, thanks to the parallelism of the computations.  Thus if a modeller wants to test their model with a range of different inputs, NengoDL will probably offer the best performance.
 
 % optimizations figure
 

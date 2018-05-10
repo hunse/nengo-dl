@@ -33,13 +33,13 @@ def filter_results(results, **kwargs):
             for x in results if all(x[k] == v for k, v in kwargs.items())]
 
 
-def bootstrap_ci(data, alpha=0.95, n_samples=1000):
+def bootstrap_ci(data, alpha=0.95, n_samples=1000, func=np.mean):
     samples = sorted(
-        np.mean(np.random.choice(data, replace=True, size=len(data)))
+        func(np.random.choice(data, replace=True, size=len(data)))
         for _ in range(n_samples))
     lower = int(n_samples * (1 - alpha) / 2)
     upper = int(n_samples * (alpha + (1 - alpha) / 2))
-    return samples[lower], samples[upper]
+    return func(data), samples[lower], samples[upper]
 
 
 def build_spaun(dimensions):
@@ -70,7 +70,7 @@ def main():
 @click.option("--batch", default=1)
 @click.option("--reps", default=10)
 def compare_backends(load, batch, reps):
-    benchmarks = ["comm_channel", "convolution", "learning"]
+    benchmarks = ["comm_channel", "matrix_mult", "learning"]
     n_range = [2048, 4096]
     d_range = [64, 128, 256]
     neuron_types = [nengo.RectifiedLinear()]
@@ -81,7 +81,7 @@ def compare_backends(load, batch, reps):
         benchmarks, n_range, d_range, neuron_types, backends))
 
     if load:
-        with open("compare_backends_%d_data.pkl" % batch, "rb") as f:
+        with open("compare_backends_%d_data_saved.pkl" % batch, "rb") as f:
             results = pickle.load(f)
     else:
         results = [{"times": [], "benchmark": bench, "n_neurons": n_neurons,
@@ -100,8 +100,14 @@ def compare_backends(load, batch, reps):
                 i + 1, len(params), bench, n_neurons, dimensions, neuron_type,
                 backend))
 
-            benchmark = nengo_benchmarks.all_benchmarks[bench](
-                dimensions=dimensions, n_neurons=n_neurons, sim_time=sim_time)
+            if bench == "matrix_mult":
+                benchmark = nengo_benchmarks.all_benchmarks[bench](
+                    d1=1, d2=dimensions, d3=1, n_neurons=n_neurons,
+                    sim_time=sim_time)
+            else:
+                benchmark = nengo_benchmarks.all_benchmarks[bench](
+                    dimensions=dimensions, n_neurons=n_neurons,
+                    sim_time=sim_time)
 
             conf = nengo.Config(nengo.Ensemble)
             conf[nengo.Ensemble].neuron_type = neuron_type
@@ -147,17 +153,20 @@ def compare_backends(load, batch, reps):
             bottoms = np.zeros(n_bars)
             c = 0
             for n in n_range:
-                data = [np.mean(t) for t in filter_results(
+                data = np.asarray([bootstrap_ci(t) for t in filter_results(
                     results, benchmark=m, neuron_type=neuron_type,
-                    n_neurons=n, backend=b)]
-                axes[k].bar(x_pos, data, width=0.5, bottom=bottoms,
-                            color=colours[c])
-                bottoms += data
+                    n_neurons=n, backend=b)])
+
+                axes[k].bar(x_pos, data[:, 0],
+                            yerr=abs(np.transpose(data[:, 1:] - data[:, [0]])),
+                            width=0.5, bottom=bottoms, color=colours[c])
+                bottoms += data[:, 0]
                 c += 1
             x_pos += n_bars + 1
 
         axes[k].set_title("%s" % m)
-        axes[k].legend(["N=%d" % n for n in n_range])
+        if k == 0:
+            axes[k].legend(["N=%d" % n for n in n_range])
         axes[k].set_xticks(np.concatenate(
             [np.arange(i * (n_bars + 1), i * (n_bars + 1) + n_bars)
              for i in range(len(backends))]))
