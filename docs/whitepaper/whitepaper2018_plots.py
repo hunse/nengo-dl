@@ -11,9 +11,8 @@ import click
 import matplotlib.pyplot as plt
 import nengo
 from nengo import spa
-import nengo_benchmarks
 import nengo_dl
-from nengo_dl import graph_optimizer
+from nengo_dl import graph_optimizer, benchmarks
 import nengo_ocl
 import numpy as np
 import tensorflow as tf
@@ -70,7 +69,7 @@ def main():
 @click.option("--batch", default=1)
 @click.option("--reps", default=10)
 def compare_backends(load, batch, reps):
-    benchmarks = ["comm_channel", "matrix_mult", "learning"]
+    bench_names = ["cconv", "integrator", "pes"]
     n_range = [2048, 4096]
     d_range = [64, 128, 256]
     neuron_types = [nengo.RectifiedLinear()]
@@ -78,7 +77,7 @@ def compare_backends(load, batch, reps):
     sim_time = 10.0
 
     params = list(itertools.product(
-        benchmarks, n_range, d_range, neuron_types, backends))
+        bench_names, n_range, d_range, neuron_types, backends))
 
     if load:
         with open("compare_backends_%d_data_saved.pkl" % batch, "rb") as f:
@@ -100,20 +99,12 @@ def compare_backends(load, batch, reps):
                 i + 1, len(params), bench, n_neurons, dimensions, neuron_type,
                 backend))
 
-            if bench == "matrix_mult":
-                benchmark = nengo_benchmarks.all_benchmarks[bench](
-                    d1=1, d2=dimensions, d3=1, n_neurons=n_neurons,
-                    sim_time=sim_time)
-            else:
-                benchmark = nengo_benchmarks.all_benchmarks[bench](
-                    dimensions=dimensions, n_neurons=n_neurons,
-                    sim_time=sim_time)
+            net = getattr(benchmarks, bench)(
+                dimensions=dimensions, neurons_per_d=n_neurons//dimensions,
+                neuron_type=neuron_type)
 
-            conf = nengo.Config(nengo.Ensemble)
-            conf[nengo.Ensemble].neuron_type = neuron_type
-            with conf:
-                with benchmark.model() as net:
-                    nengo_dl.configure_settings(trainable=False)
+            with net:
+                nengo_dl.configure_settings(trainable=False)
 
             if "nengo_dl" in backend:
                 sim = nengo_dl.Simulator(
@@ -132,7 +123,7 @@ def compare_backends(load, batch, reps):
                 for b in range(1 if "nengo_dl" in backend else batch):
                     if b > 0:
                         sim.reset()
-                    sim.run(benchmark.sim_time, progress_bar=False)
+                    sim.run(sim_time, progress_bar=False)
                 results[i]["times"].append((time.time() - start) / sim_time)
 
             print("   ", min(results[i]["times"]), max(results[i]["times"]),
