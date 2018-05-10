@@ -70,7 +70,7 @@ def main():
 @click.option("--reps", default=10)
 def compare_backends(load, batch, reps):
     bench_names = ["cconv", "integrator", "pes"]
-    n_range = [2048, 4096]
+    n_range = [32]
     d_range = [64, 128, 256]
     neuron_types = [nengo.RectifiedLinear()]
     backends = ["nengo_dl", "nengo_ocl", "nengo"]
@@ -100,7 +100,7 @@ def compare_backends(load, batch, reps):
                 backend))
 
             net = getattr(benchmarks, bench)(
-                dimensions=dimensions, neurons_per_d=n_neurons//dimensions,
+                dimensions=dimensions, neurons_per_d=n_neurons,
                 neuron_type=neuron_type)
 
             with net:
