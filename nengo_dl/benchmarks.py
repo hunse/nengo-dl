@@ -72,11 +72,13 @@ def integrator(dimensions, neurons_per_d, neuron_type):
 
         net.integ = nengo.networks.Integrator(0.1, neurons_per_d * dimensions,
                                               dimensions)
+        net.integ = nengo.Ensemble(neurons_per_d * dimensions, dimensions)
+        nengo.Connection(net.integ.neurons, net.integ.neurons, synapse=0.01)
 
         net.inp = nengo.Node([0] * dimensions)
-        nengo.Connection(net.inp, net.integ.input)
+        nengo.Connection(net.inp, net.integ, transform=0.01)
 
-        net.p = nengo.Probe(net.integ.ensemble)
+        net.p = nengo.Probe(net.integ)
 
     return net
 

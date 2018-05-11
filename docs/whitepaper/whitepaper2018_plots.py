@@ -85,7 +85,7 @@ def compare_backends(load, batch, reps):
         bench_names, n_range, d_range, neuron_types, backends))
 
     if load:
-        with open("compare_backends_%d_data_saved.pkl" % batch, "rb") as f:
+        with open("compare_backends_%d_data.pkl" % batch, "rb") as f:
             results = pickle.load(f)
     else:
         results = [{"times": [], "benchmark": bench, "n_neurons": n_neurons,
@@ -138,12 +138,12 @@ def compare_backends(load, batch, reps):
             pickle.dump(results, f)
 
     # plotting
-    f, axes = plt.subplots(1, len(benchmarks), sharey=True, sharex=False,
-                           figsize=(5 * len(benchmarks), 5))
+    f, axes = plt.subplots(1, len(bench_names), sharey=True, sharex=False,
+                           figsize=(5 * len(bench_names), 5))
     n_bars = len(d_range)
     neuron_type = nengo.RectifiedLinear()
     colours = plt.rcParams["axes.prop_cycle"].by_key()["color"]
-    for k, m in enumerate(benchmarks):
+    for k, m in enumerate(bench_names):
         x_pos = np.arange(n_bars)
         for j, b in enumerate(backends):
             bottoms = np.zeros(n_bars)
@@ -176,7 +176,7 @@ def compare_backends(load, batch, reps):
                 xycoords="axes fraction", ha="center")
 
         axes[k].set_ylim([0, 10 * batch])
-        axes[k].set_xlim([-1, (n_bars + 1) * len(benchmarks) - 1])
+        axes[k].set_xlim([-1, (n_bars + 1) * len(bench_names) - 1])
 
         if k == 0:
             axes[k].set_ylabel("real time / simulated time")
