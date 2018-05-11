@@ -233,7 +233,7 @@ def compare_backends_spaun(load):
                 data = {"relative_time": (time.time() - start) / sim_time,
                         "backend": backend.__name__, "dimensions": dimensions}
 
-            print("  %.2fx realtime" % (1. / data["speed"]))
+            print("  %.2fx realtime" % data["relative_time"])
             results.append(data)
 
         with open("compare_backends_spaun_data.pkl", "wb") as f:
