@@ -443,7 +443,6 @@ def spiking_mnist():
 
     # construct the network
     net, inp, out = build_network(
-        # nengo_dl.SoftLIFRate(amplitude=0.01, sigma=0.001),
         nengo.LIFRate(amplitude=0.01),
         dict(max_rates=nengo.dists.Choice([100]),
              intercepts=nengo.dists.Choice([0]))
@@ -730,11 +729,11 @@ def spa_optimization(load, reps):
 
 @main.command()
 def all_figures():
-    compare_backends(False, 1)
-    compare_backends(False, 10)
-    compare_optimizations(False)
+    compare_backends(load=False, reps=10, batch=1)
+    compare_backends(load=False, reps=10, batch=10)
+    compare_optimizations(load=False)
     spiking_mnist()
-    spa_optimization()
+    spa_optimization(load=False, reps=10)
 
 
 if __name__ == "__main__":

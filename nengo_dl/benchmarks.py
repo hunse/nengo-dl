@@ -12,7 +12,8 @@ from nengo_dl import DATA_DIR
 
 
 def cconv(dimensions, neurons_per_d, neuron_type):
-    """Circular convolution (EnsembleArray) benchmark.
+    """
+    Circular convolution (EnsembleArray) benchmark.
 
     Parameters
     ----------
@@ -25,7 +26,7 @@ def cconv(dimensions, neurons_per_d, neuron_type):
 
     Returns
     -------
-    nengo.Network
+    :class:`~nengo:nengo.Network`
         benchmark network
     """
 
@@ -48,7 +49,8 @@ def cconv(dimensions, neurons_per_d, neuron_type):
 
 
 def integrator(dimensions, neurons_per_d, neuron_type):
-    """Single integrator ensemble benchmark.
+    """
+    Single integrator ensemble benchmark.
 
     Parameters
     ----------
@@ -61,7 +63,7 @@ def integrator(dimensions, neurons_per_d, neuron_type):
 
     Returns
     -------
-    nengo.Network
+    :class:`~nengo:nengo.Network`
         benchmark network
     """
 
@@ -84,7 +86,8 @@ def integrator(dimensions, neurons_per_d, neuron_type):
 
 
 def pes(dimensions, neurons_per_d, neuron_type):
-    """PES learning rule benchmark.
+    """
+    PES learning rule benchmark.
 
     Parameters
     ----------
@@ -97,7 +100,7 @@ def pes(dimensions, neurons_per_d, neuron_type):
 
     Returns
     -------
-    nengo.Network
+    :class:`~nengo:nengo.Network`
         benchmark network
     """
 
@@ -108,15 +111,15 @@ def pes(dimensions, neurons_per_d, neuron_type):
 
         net.inp = nengo.Node([1] * dimensions)
         net.pre = nengo.Ensemble(neurons_per_d * dimensions, dimensions)
-        net.post = nengo.Ensemble(neurons_per_d * dimensions, dimensions)
-        net.err = nengo.Node(size_in=dimensions)
+        net.post = nengo.Node(size_in=dimensions)
+
         nengo.Connection(net.inp, net.pre)
-        nengo.Connection(net.post, net.err, transform=-1)
-        nengo.Connection(net.inp, net.err)
 
         conn = nengo.Connection(
             net.pre, net.post, learning_rule_type=nengo.PES())
-        nengo.Connection(net.err, conn.learning_rule)
+
+        nengo.Connection(net.post, conn.learning_rule, transform=-1)
+        nengo.Connection(net.inp, conn.learning_rule)
 
         net.p = nengo.Probe(net.post)
 
@@ -124,7 +127,8 @@ def pes(dimensions, neurons_per_d, neuron_type):
 
 
 def mnist(use_tensor_layer=True):
-    """A network designed to stress-test tensor layers (based on mnist net).
+    """
+    A network designed to stress-test tensor layers (based on mnist net).
 
     Parameters
     ----------
