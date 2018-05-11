@@ -54,7 +54,12 @@ def build_spaun(dimensions):
     vocab.initialize_vis_vocab(vis_data.dimensions, vis_data.sps)
 
     with Spaun() as net:
-        nengo_dl.configure_settings(trainable=False)
+        nengo_dl.configure_settings(trainable=False, simplifications=[
+            graph_optimizer.remove_constant_copies,
+            graph_optimizer.remove_unmodified_resets,
+            # graph_optimizer.remove_zero_incs,
+            graph_optimizer.remove_identity_muls
+        ])
 
     return net
 
