@@ -85,7 +85,7 @@ def compare_backends(load, batch, reps):
         bench_names, n_range, d_range, neuron_types, backends))
 
     if load:
-        with open("compare_backends_%d_data.pkl" % batch, "rb") as f:
+        with open("compare_backends_%d_data_saved.pkl" % batch, "rb") as f:
             results = pickle.load(f)
     else:
         results = [{"times": [], "benchmark": bench, "n_neurons": n_neurons,
@@ -143,6 +143,7 @@ def compare_backends(load, batch, reps):
     n_bars = len(d_range)
     neuron_type = nengo.RectifiedLinear()
     colours = plt.rcParams["axes.prop_cycle"].by_key()["color"]
+    y_max = 2.5 * batch
     for k, m in enumerate(bench_names):
         x_pos = np.arange(n_bars)
         for j, b in enumerate(backends):
@@ -156,12 +157,20 @@ def compare_backends(load, batch, reps):
                 axes[k].bar(x_pos, data[:, 0],
                             yerr=abs(np.transpose(data[:, 1:] - data[:, [0]])),
                             width=0.5, bottom=bottoms, color=colours[c])
+
+                for i, d in enumerate(data[:, 0]):
+                    if d > y_max:
+                        axes[k].annotate(
+                            "%.1f" % d, (x_pos[i], y_max * 0.9),
+                            ha="center", va="center", rotation="vertical",
+                            color="white")
+
                 bottoms += data[:, 0]
                 c += 1
             x_pos += n_bars + 1
 
         axes[k].set_title("%s" % m)
-        if k == 0:
+        if k == 0 and len(n_range) > 1:
             axes[k].legend(["N=%d" % n for n in n_range])
         axes[k].set_xticks(np.concatenate(
             [np.arange(i * (n_bars + 1), i * (n_bars + 1) + n_bars)
@@ -175,8 +184,8 @@ def compare_backends(load, batch, reps):
                     -0.1),
                 xycoords="axes fraction", ha="center")
 
-        axes[k].set_ylim([0, 10 * batch])
-        axes[k].set_xlim([-1, (n_bars + 1) * len(bench_names) - 1])
+        axes[k].set_ylim([0, y_max])
+        axes[k].set_xlim([-1, (n_bars + 1) * len(backends) - 1])
 
         if k == 0:
             axes[k].set_ylabel("real time / simulated time")
@@ -729,8 +738,8 @@ def spa_optimization(load, reps):
 
 @main.command()
 def all_figures():
-    compare_backends(load=False, reps=10, batch=1)
-    compare_backends(load=False, reps=10, batch=10)
+    compare_backends(load=False, reps=5, batch=1)
+    compare_backends(load=False, reps=5, batch=10)
     compare_optimizations(load=False)
     spiking_mnist()
     spa_optimization(load=False, reps=10)
