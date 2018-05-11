@@ -72,15 +72,13 @@ def integrator(dimensions, neurons_per_d, neuron_type):
         net.config[nengo.Ensemble].gain = nengo.dists.Choice([1, -1])
         net.config[nengo.Ensemble].bias = nengo.dists.Uniform(-1, 1)
 
-        net.integ = nengo.networks.Integrator(0.1, neurons_per_d * dimensions,
-                                              dimensions)
-        net.integ = nengo.Ensemble(neurons_per_d * dimensions, dimensions)
-        nengo.Connection(net.integ.neurons, net.integ.neurons, synapse=0.01)
+        net.integ = nengo.networks.EnsembleArray(neurons_per_d, dimensions)
+        nengo.Connection(net.integ.output, net.integ.input, synapse=0.01)
 
         net.inp = nengo.Node([0] * dimensions)
-        nengo.Connection(net.inp, net.integ, transform=0.01)
+        nengo.Connection(net.inp, net.integ.input, transform=0.01)
 
-        net.p = nengo.Probe(net.integ)
+        net.p = nengo.Probe(net.integ.output)
 
     return net
 
@@ -122,6 +120,36 @@ def pes(dimensions, neurons_per_d, neuron_type):
         nengo.Connection(net.inp, conn.learning_rule)
 
         net.p = nengo.Probe(net.post)
+
+    return net
+
+
+def basal_ganglia(dimensions, neurons_per_d, neuron_type):
+    """
+    Basal ganglia network benchmark.
+
+    Parameters
+    ----------
+    dimensions : int
+        Number of dimensions for vector values
+    neurons_per_d : int
+        Number of neurons to use per vector dimension
+    neuron_type : :class:`~nengo:nengo.neurons.NeuronType`
+        Simulation neuron type
+
+    Returns
+    -------
+    :class:`~nengo:nengo.Network`
+        benchmark network
+    """
+
+    with nengo.Network(label="basal_ganglia", seed=0) as net:
+        net.config[nengo.Ensemble].neuron_type = neuron_type
+
+        net.inp = nengo.Node([1] * dimensions)
+        net.bg = nengo.networks.BasalGanglia(dimensions, neurons_per_d)
+        nengo.Connection(net.inp, net.bg.input)
+        net.p = nengo.Probe(net.bg.output)
 
     return net
 

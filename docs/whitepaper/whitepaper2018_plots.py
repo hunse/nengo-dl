@@ -74,12 +74,12 @@ def main():
 @click.option("--batch", default=1)
 @click.option("--reps", default=10)
 def compare_backends(load, batch, reps):
-    bench_names = ["cconv", "integrator", "pes"]
-    n_range = [2048, 4096]
-    d_range = [64, 128, 256]
+    bench_names = ["integrator", "cconv", "basal_ganglia", "pes"]
+    n_range = [9984]
+    d_range = [64, 128, 192]
     neuron_types = [nengo.RectifiedLinear()]
     backends = ["nengo_dl", "nengo_ocl", "nengo"]
-    sim_time = 10.0
+    sim_time = 5.0
 
     params = list(itertools.product(
         bench_names, n_range, d_range, neuron_types, backends))
