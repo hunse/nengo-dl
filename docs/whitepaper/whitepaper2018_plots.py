@@ -138,13 +138,18 @@ def compare_backends(load, batch, reps):
             pickle.dump(results, f)
 
     # plotting
-    f, axes = plt.subplots(1, len(bench_names), sharey=True, sharex=False,
-                           figsize=(5 * len(bench_names), 5))
+    subplots = int(np.ceil(np.sqrt(len(bench_names))))
+    f, axes = plt.subplots(subplots, subplots, sharey=True, sharex=False,
+                           figsize=(5 * subplots, 5 * subplots),
+                           gridspec_kw={
+                               "hspace": 0.2, "top": 0.95, "bottom": 0.05,
+                               "left": 0.05, "right": 0.95})
     n_bars = len(d_range)
     neuron_type = nengo.RectifiedLinear()
     colours = plt.rcParams["axes.prop_cycle"].by_key()["color"]
     y_max = 2.5 * batch
     for k, m in enumerate(bench_names):
+        subplot_idx = (k // subplots, k % subplots)
         x_pos = np.arange(n_bars)
         for j, b in enumerate(backends):
             bottoms = np.zeros(n_bars)
@@ -154,13 +159,15 @@ def compare_backends(load, batch, reps):
                     results, benchmark=m, neuron_type=neuron_type,
                     n_neurons=n, backend=b)])
 
-                axes[k].bar(x_pos, data[:, 0],
-                            yerr=abs(np.transpose(data[:, 1:] - data[:, [0]])),
-                            width=0.5, bottom=bottoms, color=colours[c])
+                axes[subplot_idx].bar(x_pos, data[:, 0],
+                                      yerr=abs(np.transpose(
+                                          data[:, 1:] - data[:, [0]])),
+                                      width=0.5, bottom=bottoms,
+                                      color=colours[c])
 
                 for i, d in enumerate(data[:, 0]):
                     if d > y_max:
-                        axes[k].annotate(
+                        axes[subplot_idx].annotate(
                             "%.1f" % d, (x_pos[i], y_max * 0.9),
                             ha="center", va="center", rotation="vertical",
                             color="white")
@@ -169,28 +176,28 @@ def compare_backends(load, batch, reps):
                 c += 1
             x_pos += n_bars + 1
 
-        axes[k].set_title("%s" % m)
+        axes[subplot_idx].set_title("%s" % m)
         if k == 0 and len(n_range) > 1:
-            axes[k].legend(["N=%d" % n for n in n_range])
-        axes[k].set_xticks(np.concatenate(
+            axes[subplot_idx].legend(["N=%d" % n for n in n_range])
+        axes[subplot_idx].set_xticks(np.concatenate(
             [np.arange(i * (n_bars + 1), i * (n_bars + 1) + n_bars)
              for i in range(len(backends))]))
-        axes[k].set_xticklabels([t for _ in range(len(backends))
-                                 for t in d_range])
+        axes[subplot_idx].set_xticklabels([t for _ in range(len(backends))
+                                           for t in d_range])
         for i, b in enumerate(backends):
-            axes[k].annotate(
+            axes[subplot_idx].annotate(
                 b, (((n_bars - 1) / 2 + (n_bars + 1) * i + 1) /
                     ((n_bars + 1) * len(backends)),
                     -0.1),
                 xycoords="axes fraction", ha="center")
 
-        axes[k].set_ylim([0, y_max])
-        axes[k].set_xlim([-1, (n_bars + 1) * len(backends) - 1])
+        axes[subplot_idx].set_ylim([0, y_max])
+        axes[subplot_idx].set_xlim([-1, (n_bars + 1) * len(backends) - 1])
 
-        if k == 0:
-            axes[k].set_ylabel("real time / simulated time")
+        if k % subplots == 0:
+            axes[subplot_idx].set_ylabel("real time / simulated time")
 
-    plt.tight_layout(rect=(0, 0.05, 1, 1))
+    # plt.tight_layout(rect=(0, 0.05, 1, 1))
 
     plt.savefig("compare_backends_%d.pdf" % batch)
     plt.show()
@@ -284,8 +291,6 @@ def compare_optimizations(load, reps):
                    for simp, plan, sort, unro in params]
 
     net = build_spaun(dimensions)
-    # net = nengo_benchmarks.all_benchmarks["convolution"](
-    #     dimensions=dimensions, n_neurons=1024).model()
     model = nengo.builder.Model(
         dt=0.001, builder=nengo_dl.builder.NengoBuilder())
     model.build(net)
@@ -308,8 +313,7 @@ def compare_optimizations(load, reps):
                 else:
                     config["simplifications"] = []
                 if not plan:
-                    config[
-                        "planner"] = graph_optimizer.greedy_planner  # graph_optimizer.noop_planner
+                    config["planner"] = graph_optimizer.greedy_planner
                 if not sort:
                     config["sorter"] = graph_optimizer.noop_order_signals
                 nengo_dl.configure_settings(**config)

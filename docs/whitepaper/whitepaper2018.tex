@@ -400,16 +400,16 @@ We will compare the simulation speed of NengoDL to the default Nengo simulator (
 \begin{figure}
 \centering
 \includegraphics[width=\textwidth]{compare_backends_1.pdf}
-\caption{Comparing simulation speed of NengoDL versus NengoOCL versus Nengo.  Analyzing scaling with respect to the represented dimensionality (64, 128, 256) versus number of neurons per ensemble (2048, 4096).}
+\caption{Comparing simulation speed of NengoDL versus NengoOCL versus Nengo on various benchmark models.  Showing scaling with respect to the represented dimensionality (64, 128, 192).}
 \label{fig:compare_backends_1}
 \end{figure}
 
-Figure~\ref{fig:compare_backends_1} shows the relative speed of the simulators on three different benchmark models.  The content/purpose of the models is not particularly important, they were simply chosen to showcase a range of different models with varying complexities.  Overall we can see that the GPU-based simulators (NengoDL and NengoOCL) offer significant performance improvements, with NengoOCL offering the best performance.  This is not surprising, given that NengoOCL has kernels that are custom written for simulating Nengo models, whereas in NengoDL we are using generic TensorFlow operations.
+Figure~\ref{fig:compare_backends_1} shows the relative speed of the simulators on three different benchmark models.  The content/purpose of the models is not particularly important, they were simply chosen to showcase a range of different models with varying complexities.  Overall we can see that the GPU-based simulators (NengoDL and NengoOCL) offer significant performance improvements, with NengoOCL or NengoDL offering the best performance on different benchmarks.
 
 \begin{figure}
 \centering
-\includegraphics[width=\textwidth]{compare_backends_1.pdf}
-\caption{Comparing simulation speed of NengoDL versus NengoOCL versus Nengo with 10 batched input.  Analyzing scaling with respect to the represented dimensionality (64, 128, 256) versus number of neurons per ensemble (2048, 4096).}
+\includegraphics[width=\textwidth]{compare_backends_10.pdf}
+\caption{Comparing simulation speed of NengoDL versus NengoOCL versus Nengo on various benchmark models with 10 batched inputs.  Showing scaling with respect to the represented dimensionality (64, 128, 192).  Note that we do not get the NengoDL batching benefits on the PES benchmark, because that network applies an online learning rule to the weights (meaning that we need a separate weight matrix for each batch element).}
 \label{fig:compare_backends_10}
 \end{figure}
 
@@ -430,7 +430,7 @@ In the first model we use the \texttt{TensorNode}/\texttt{tensor\_layer} syntax 
 
 We have seen the interesting possibilities of integrating this kind of vision system with cognitive models in, e.g., \citet{Eliasmith2012a}, where the model used an MNIST vision system combined with working memory, inductive reasoning, and motor control capabilities to perform a range of different cognitive tasks.  However, in that case the vision system was trained separately using a standard deep learning package, and then imported into Nengo.  Here we show that using the new features of NengoDL we can directly build and train these deep learning style networks within the Nengo framework, making it much simpler to construct integrated, hybrid cognitive model as in \citet{Eliasmith2012a}.
 
-After training the model achieves 99.14\% classification accuracy.  However, one of the important features of Nengo, which is retained in NengoDL, is the ability to smoothly switch between rate and spiking neuron models.  After training the model using the rate-mode representation of LIF neurons, we can then rebuild the model using spiking LIF neurons (using the same trained weights).  This spiking version of the network achieves 99.06\% classification accuracy, only a small decrease from the rate version.  Spiking deep learning is an interesting and active research field \citep{Hunsberger2015,Lee2016}, and one which NengoDL is naturally situated to support.
+After training, the model achieves 99.14\% classification accuracy.  However, one of the important features of Nengo, which is retained in NengoDL, is the ability to smoothly switch between rate and spiking neuron models.  After training the model using the rate-based implementation of LIF neurons, we can then rebuild the model using spiking LIF neurons (using the same trained weights).  This spiking version of the network achieves 99.06\% classification accuracy, only a small decrease from the rate version.  Spiking deep learning is an interesting and active research field \citep{Hunsberger2015,Lee2016}, and one which NengoDL is naturally situated to support.
 
 \subsubsection{Memory storage/retrieval}
 
@@ -443,7 +443,7 @@ We train the model by generating a randomized set of training data, with differe
 \begin{figure}
 \centering
 \includegraphics[width=0.9\textwidth]{spa_optimization.pdf}
-\caption{Retrieval accuracy on the memory task, before and after training is applied.}
+\caption{Retrieval accuracy on the memory task, before and after training is applied.  Showing 95\% confidence intervals (for different random initializations).}
 \label{fig:spa_optimization}
 \end{figure}
 
