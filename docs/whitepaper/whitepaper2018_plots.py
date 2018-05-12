@@ -269,9 +269,8 @@ def compare_backends_spaun(load):
 @main.command()
 @click.option("--load/--no-load", default=False)
 @click.option("--reps", default=10)
-def compare_optimizations(load, reps):
-    dimensions = 4
-
+@click.option("--dimensions", default=4)
+def compare_optimizations(load, reps, dimensions):
     # optimizations to apply (simplifications, merging, sorting, unroll)
     params = [
         (False, False, False, False),
