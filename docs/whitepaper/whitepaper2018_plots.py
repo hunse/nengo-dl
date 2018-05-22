@@ -278,7 +278,7 @@ def compare_optimizations(load, reps, dimensions):
     # optimizations to apply (simplifications, merging, sorting, unroll)
     params = [
         (False, False, False, False),
-        (False, False, False, True)
+        (False, False, False, True),
         (False, True, False, True),
         (False, True, True, True),
         (True, True, True, True),
