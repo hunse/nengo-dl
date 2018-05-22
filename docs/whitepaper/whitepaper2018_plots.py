@@ -13,6 +13,7 @@ os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 
 import click
 import matplotlib.pyplot as plt
+import matplotlib.ticker
 import nengo
 from nengo import spa
 import nengo_dl
@@ -76,10 +77,11 @@ def main():
 @main.command()
 @click.option("--load/--no-load", default=False)
 @click.option("--batch", default=1)
-@click.option("--reps", default=10)
-def compare_backends(load, batch, reps):
+@click.option("--reps", default=5)
+@click.option("--n_neurons", default=9984)
+def compare_backends(load, batch, reps, n_neurons):
     bench_names = ["integrator", "cconv", "basal_ganglia", "pes"]
-    n_range = [9984]
+    n_range = [n_neurons]
     d_range = [64, 128, 192]
     neuron_types = [nengo.RectifiedLinear()]
     backends = ["nengo_dl", "nengo_ocl", "nengo"]
@@ -203,76 +205,13 @@ def compare_backends(load, batch, reps):
     # plt.tight_layout(rect=(0, 0.05, 1, 1))
 
     plt.savefig("compare_backends_%d.pdf" % batch)
-    plt.show()
+    # plt.show()
 
 
 @main.command()
 @click.option("--load/--no-load", default=False)
-def compare_backends_spaun(load):
-    backends = [nengo_dl, nengo_ocl, nengo]
-    d_range = [64, 128, 256]
-
-    if load:
-        with open("compare_backends_spaun_data.pkl", "rb") as f:
-            results = pickle.load(f)
-    else:
-        params = list(itertools.product(d_range, backends))
-
-        results = []
-        net = None
-        for i, (dimensions, backend) in enumerate(params):
-            print("%d/%d: %s %s" % (i + 1, len(params), backend.__name__,
-                                    dimensions))
-
-            if net is None or vocab.sp_dim != dimensions:
-                net = build_spaun(dimensions)
-
-            if backend == nengo_dl:
-                kwargs = {"unroll_simulation": 50,
-                          "minibatch_size": None,
-                          "device": "/gpu:0",
-                          "dtype": tf.float32,
-                          "progress_bar": True
-                          }
-                with net:
-                    nengo_dl.configure_settings(session_config={
-                        "gpu_options.allow_growth": True})
-            elif backend == nengo:
-                kwargs = {"progress_bar": True,
-                          "optimize": True}
-            elif backend == nengo_ocl:
-                kwargs = {"progress_bar": True}
-
-            with backend.Simulator(net, **kwargs) as sim:
-                sim.run(0.1, progress_bar=False)
-
-                sim_time = 1.0
-                start = time.time()
-                sim.run(sim_time)
-                data = {"relative_time": (time.time() - start) / sim_time,
-                        "backend": backend.__name__, "dimensions": dimensions}
-
-            print("  %.2fx realtime" % data["relative_time"])
-            results.append(data)
-
-        with open("compare_backends_spaun_data.pkl", "wb") as f:
-            pickle.dump(results, f)
-
-    plt.figure()
-    for backend in backends:
-        plt.plot(d_range, filter_results(results, backend=backend.__name__),
-                 label=backend.__name__)
-    plt.legend()
-    plt.xlabel("dimensions")
-    plt.ylabel("real time / simulated time")
-
-    plt.show()
-
-
-@main.command()
-@click.option("--load/--no-load", default=False)
-@click.option("--reps", default=10)
-@click.option("--dimensions", default=4)
+@click.option("--reps", default=5)
+@click.option("--dimensions", default=128)
 def compare_optimizations(load, reps, dimensions):
     # optimizations to apply (simplifications, merging, sorting, unroll)
     params = [
@@ -285,19 +224,20 @@ def compare_optimizations(load, reps, dimensions):
     # params = list(itertools.product((False, True), repeat=4))
 
     if load:
-        with open("compare_optimizations_%d_data.pkl" % dimensions, "rb") as f:
+        with open("compare_optimizations_%d_data_saved.pkl" % dimensions,
+                  "rb") as f:
             results = pickle.load(f)
     else:
         results = [{"times": [], "simplifications": simp, "planner": plan,
                     "sorting": sort, "unroll": unro}
                    for simp, plan, sort, unro in params]
 
-    net = build_spaun(dimensions)
-    model = nengo.builder.Model(
-        dt=0.001, builder=nengo_dl.builder.NengoBuilder())
-    model.build(net)
-
     if reps > 0:
+        net = build_spaun(dimensions)
+        model = nengo.builder.Model(
+            dt=0.001, builder=nengo_dl.builder.NengoBuilder())
+        model.build(net)
+
         for i, (simp, plan, sort, unro) in enumerate(params):
             print("%d/%d: %s %s %s %s" % (i + 1, len(params), simp, plan, sort,
                                           unro))
@@ -337,30 +277,40 @@ def compare_optimizations(load, reps, dimensions):
         with open("compare_optimizations_%d_data.pkl" % dimensions, "wb") as f:
             pickle.dump(results, f)
 
+    data = np.asarray([bootstrap_ci(x) for x in filter_results(results)])
+
     plt.figure()
-    plt.bar(np.arange(len(results)), [np.mean(t) for t in
-                                      filter_results(results)])
+    plt.bar(np.arange(len(results)), data[:, 0],
+            yerr=abs(np.transpose(data[:, 1:] - data[:, [0]])))
     labels = ["none"]
     for r in results[1:]:
         lab = ""
+        if r["unroll"]:
+            lab += "unrolling\n"
         if r["planner"]:
-            lab += "merging\n"
+            lab += "planning\n"
         if r["sorting"]:
             lab += "sorting\n"
         if r["simplifications"]:
             lab += "simplifications\n"
-        if r["unroll"]:
-            lab += "unrolling\n"
+
         labels.append(lab)
     plt.xticks(np.arange(len(results)), labels, rotation="vertical")
     plt.ylabel("real time / simulated time")
+    plt.yscale("log")
+    # fmt = matplotlib.ticker.FormatStrFormatter("%.2f%%")
+    # fmt.set_scientific(False)
+    # plt.gca().yaxis.set_major_formatter(fmt)
+    # plt.gca().ticklabel_format(useOffset=False, style="plain", axis="y")
+
+    plt.tight_layout()
 
     plt.show()
 
 
 @main.command()
 @click.option("--load/--no-load", default=False)
-@click.option("--reps", default=10)
+@click.option("--reps", default=5)
 @click.option("--dimensions", default=4)
 def compare_simplifications(load, reps, dimensions):
     simplifications = [
@@ -419,7 +369,8 @@ def compare_simplifications(load, reps, dimensions):
 
 
 @main.command()
-def spiking_mnist():
+@click.option("--n_epochs", default=10)
+def spiking_mnist(n_epochs):
     data = mnist.read_data_sets("MNIST_data/", one_hot=True)
     minibatch_size = 200
 
@@ -491,7 +442,7 @@ def spiking_mnist():
         if do_training:
             # run training
             sim.train(train_inputs, train_targets, opt, objective=objective,
-                      n_epochs=10)
+                      n_epochs=n_epochs)
 
             # save the parameters to file
             sim.save_params("./mnist_params")
@@ -525,27 +476,12 @@ def spiking_mnist():
                                                         test_targets_time,
                                                         classification_error))
 
-        sim.run_steps(n_steps, input_feeds={
-            inp: test_inputs_time[inp][:minibatch_size]})
-
-        for i in range(5):
-            plt.figure()
-            plt.subplot(1, 2, 1)
-            plt.imshow(np.reshape(data.test.images[i], (28, 28)))
-            plt.axis('off')
-
-            plt.subplot(1, 2, 2)
-            plt.plot(sim.trange(), sim.data[out_p][i])
-            plt.legend([str(i) for i in range(10)], loc="upper left")
-            plt.xlabel("time")
-
-    plt.show()
-
 
 @main.command()
 @click.option("--load/--no-load", default=False)
 @click.option("--reps", default=10)
-def spa_optimization(load, reps):
+@click.option("--dimensions", default=64)
+def spa_optimization(load, reps, dimensions):
     def get_binding_data(n_inputs, n_pairs, dims, seed, t_int, t_mem,
                          dt=0.001):
         int_steps = int(t_int / dt)
@@ -652,7 +588,7 @@ def spa_optimization(load, reps):
     t_int = 0.01  # length of time to present each input pair
     t_mem = 0.03  # length of memorization period
     n_pairs = 2  # number of role/filler pairs in each input
-    dims = 64  # dimensionality of semantic pointer vectors
+    dims = dimensions  # dimensionality of semantic pointer vectors
     minibatch_size = 64
     optimizer = tf.train.RMSPropOptimizer(1e-4)
 
@@ -739,26 +675,26 @@ def spa_optimization(load, reps):
     plt.legend(["before training", "after training"])
     plt.savefig("spa_optimization.pdf")
 
-    plt.show()
+    # plt.show()
 
 
 @main.command()
 @click.pass_context
 def all_figures(ctx):
-    ctx.invoke(compare_backends, load=False, reps=5, batch=1)
-    ctx.invoke(compare_backends, load=False, reps=5, batch=10)
-    ctx.invoke(compare_optimizations, load=False, reps=5, dimensions=128)
+    ctx.invoke(compare_backends)
+    ctx.invoke(compare_backends, batch=10)
+    ctx.invoke(compare_optimizations)
     ctx.invoke(spiking_mnist)
-    ctx.invoke(spa_optimization, load=False, reps=10)
+    ctx.invoke(spa_optimization)
 
 
 @main.command()
 @click.pass_context
 def test(ctx):
-    ctx.invoke(compare_backends, load=False, reps=1, batch=1)
-    ctx.invoke(compare_optimizations, load=False, reps=1, dimensions=2)
-    ctx.invoke(spiking_mnist)
-    ctx.invoke(spa_optimization, load=False, reps=1)
+    ctx.invoke(compare_backends, reps=1, batch=1, n_neurons=960)
+    ctx.invoke(compare_optimizations, reps=1, dimensions=1)
+    ctx.invoke(spiking_mnist, n_epochs=1)
+    ctx.invoke(spa_optimization, reps=1, dimensions=2)
 
 
 if __name__ == "__main__":
