@@ -417,7 +417,7 @@ That being said, we can see an important advantage of NengoDL in Figure~\ref{fig
 
 % optimizations figure
 
-Finally, it is interesting to explore the effect of the various graph optimization steps described in Section~\ref{sec:graphoptimizations}.
+Finally, it is interesting to explore the effect of the various graph optimization steps described in Section~\ref{sec:graphoptimizations}.  Figure~X shows the speed of NengoDL when simulating the Spaun model (an updated version of \citealt{Eliasmith2012}, available at \url{https://github.com/xchoo/spaun2.0}) with 128-dimensional vectors, consisting of X neurons split amongst Y ensembles with Z connections.  Spaun was chosen because the complexity of this model provides a good stress test for the graph optimization methods.  We can see that each type of optimization provides incremental improvements to the simulation speed.  Note that in the ``planning'' case we are comparing the tree planner to the greedy planner (see Section~\ref{sec:planning}), rather than the presence/absence of planning.  That is, in all cases we are performing operator merging.  If we do not perform any merging then the simulation is extremely slow (after one hour the simulation had still not finished initializing the TensorFlow graph).
 
 \subsection{Model examples}
 

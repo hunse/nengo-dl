@@ -98,10 +98,7 @@ def compare_backends(load, batch, reps):
                    for bench, n_neurons, dimensions, neuron_type, backend
                    in params]
 
-    n_results = len(results[0]["times"])
-    for r in range(n_results, n_results + reps):
-        print("=" * 30)
-        print("REP %d" % r)
+    if reps > 0:
         for i, (bench, n_neurons, dimensions, neuron_type,
                 backend) in enumerate(params):
             print("%d/%d: %s %s %s %s %s" % (
@@ -128,12 +125,14 @@ def compare_backends(load, batch, reps):
                 # run once to eliminate startup overhead
                 sim.run(0.1, progress_bar=False)
 
-                start = time.time()
-                for b in range(1 if "nengo_dl" in backend else batch):
-                    if b > 0:
-                        sim.reset()
-                    sim.run(sim_time, progress_bar=False)
-                results[i]["times"].append((time.time() - start) / sim_time)
+                for _ in range(reps):
+                    start = time.time()
+                    for b in range(1 if "nengo_dl" in backend else batch):
+                        if b > 0:
+                            sim.reset()
+                        sim.run(sim_time, progress_bar=False)
+                    results[i]["times"].append(
+                        (time.time() - start) / sim_time)
 
             print("   ", min(results[i]["times"]), max(results[i]["times"]),
                   np.mean(results[i]["times"]))
@@ -298,10 +297,7 @@ def compare_optimizations(load, reps, dimensions):
         dt=0.001, builder=nengo_dl.builder.NengoBuilder())
     model.build(net)
 
-    n_results = len(results[0]["times"])
-    for r in range(n_results, n_results + reps):
-        print("=" * 30)
-        print("REP %d" % r)
+    if reps > 0:
         for i, (simp, plan, sort, unro) in enumerate(params):
             print("%d/%d: %s %s %s %s" % (i + 1, len(params), simp, plan, sort,
                                           unro))
@@ -328,9 +324,12 @@ def compare_optimizations(load, reps, dimensions):
                 sim.run(0.1)
 
                 sim_time = 1.0
-                start = time.time()
-                sim.run(sim_time)
-                results[i]["times"].append((time.time() - start) / sim_time)
+
+                for _ in range(reps):
+                    start = time.time()
+                    sim.run(sim_time)
+                    results[i]["times"].append(
+                        (time.time() - start) / sim_time)
 
             print("   ", min(results[i]["times"]), max(results[i]["times"]),
                   np.mean(results[i]["times"]))
@@ -388,10 +387,7 @@ def compare_simplifications(load, reps, dimensions):
         dt=0.001, builder=nengo_dl.builder.NengoBuilder())
     model.build(net)
 
-    for r in range(reps):
-        print("=" * 30)
-        print("REP %d" % r)
-
+    if reps > 0:
         for j, p in enumerate(params):
             simps = []
             for i, s in enumerate(p):
@@ -409,9 +405,11 @@ def compare_simplifications(load, reps, dimensions):
                 sim.run(0.1, progress_bar=False)
 
                 sim_time = 1.0
-                start = time.time()
-                sim.run(sim_time, progress_bar=False)
-                results[j]["times"].append((time.time() - start) / sim_time)
+                for _ in range(reps):
+                    start = time.time()
+                    sim.run(sim_time, progress_bar=False)
+                    results[j]["times"].append(
+                        (time.time() - start) / sim_time)
 
             print("   ", min(results[j]["times"]), max(results[j]["times"]),
                   np.mean(results[j]["times"]))
@@ -745,12 +743,22 @@ def spa_optimization(load, reps):
 
 
 @main.command()
-def all_figures():
-    compare_backends(load=False, reps=5, batch=1)
-    compare_backends(load=False, reps=5, batch=10)
-    compare_optimizations(load=False)
-    spiking_mnist()
-    spa_optimization(load=False, reps=10)
+@click.pass_context
+def all_figures(ctx):
+    ctx.invoke(compare_backends, load=False, reps=5, batch=1)
+    ctx.invoke(compare_backends, load=False, reps=5, batch=10)
+    ctx.invoke(compare_optimizations, load=False, reps=5, dimensions=128)
+    ctx.invoke(spiking_mnist)
+    ctx.invoke(spa_optimization, load=False, reps=10)
+
+
+@main.command()
+@click.pass_context
+def test(ctx):
+    ctx.invoke(compare_backends, load=False, reps=1, batch=1)
+    ctx.invoke(compare_optimizations, load=False, reps=1, dimensions=2)
+    ctx.invoke(spiking_mnist)
+    ctx.invoke(spa_optimization, load=False, reps=1)
 
 
 if __name__ == "__main__":
