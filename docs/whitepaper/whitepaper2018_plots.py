@@ -282,7 +282,7 @@ def compare_optimizations(load, reps, dimensions):
     # params = list(itertools.product((False, True), repeat=4))
 
     if load:
-        with open("compare_optimizations_data.pkl", "rb") as f:
+        with open("compare_optimizations_%d_data.pkl" % dimensions, "rb") as f:
             results = pickle.load(f)
     else:
         results = [{"times": [], "simplifications": simp, "planner": plan,
@@ -294,7 +294,8 @@ def compare_optimizations(load, reps, dimensions):
         dt=0.001, builder=nengo_dl.builder.NengoBuilder())
     model.build(net)
 
-    for r in range(reps):
+    n_results = len(results[0]["times"])
+    for r in range(n_results, n_results + reps):
         print("=" * 30)
         print("REP %d" % r)
         for i, (simp, plan, sort, unro) in enumerate(params):
@@ -330,7 +331,7 @@ def compare_optimizations(load, reps, dimensions):
             print("   ", min(results[i]["times"]), max(results[i]["times"]),
                   np.mean(results[i]["times"]))
 
-        with open("compare_optimizations_data.pkl", "wb") as f:
+        with open("compare_optimizations_%d_data.pkl" % dimensions, "wb") as f:
             pickle.dump(results, f)
 
     plt.figure()
