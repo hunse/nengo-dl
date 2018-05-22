@@ -7,6 +7,10 @@ import time
 
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 
+# import logging
+#
+# logging.basicConfig(level=logging.INFO)
+
 import click
 import matplotlib.pyplot as plt
 import nengo
@@ -302,20 +306,20 @@ def compare_optimizations(load, reps, dimensions):
             print("%d/%d: %s %s %s %s" % (i + 1, len(params), simp, plan, sort,
                                           unro))
             with net:
-                config = {}
-                if simp:
-                    config["simplifications"] = [
-                        graph_optimizer.remove_constant_copies,
-                        graph_optimizer.remove_unmodified_resets,
-                        # graph_optimizer.remove_zero_incs,
-                        graph_optimizer.remove_identity_muls
-                    ]
-                else:
-                    config["simplifications"] = []
-                if not plan:
-                    config["planner"] = graph_optimizer.greedy_planner
-                if not sort:
-                    config["sorter"] = graph_optimizer.noop_order_signals
+                config = dict()
+                config["simplifications"] = (
+                    [graph_optimizer.remove_constant_copies,
+                     graph_optimizer.remove_unmodified_resets,
+                     # graph_optimizer.remove_zero_incs,
+                     graph_optimizer.remove_identity_muls] if simp else
+                    [])
+
+                config["planner"] = (graph_optimizer.tree_planner if plan else
+                                     graph_optimizer.greedy_planner)
+
+                config["sorter"] = (graph_optimizer.order_signals if sort else
+                                    graph_optimizer.noop_order_signals)
+
                 nengo_dl.configure_settings(**config)
 
             with nengo_dl.Simulator(
