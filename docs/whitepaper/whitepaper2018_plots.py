@@ -278,10 +278,10 @@ def compare_optimizations(load, reps, dimensions):
     # optimizations to apply (simplifications, merging, sorting, unroll)
     params = [
         (False, False, False, False),
-        (False, True, False, False),
-        (False, True, True, False),
-        (True, True, True, False),
-        (True, True, True, True)
+        (False, False, False, True)
+        (False, True, False, True),
+        (False, True, True, True),
+        (True, True, True, True),
     ]
     # params = list(itertools.product((False, True), repeat=4))
 
