@@ -37,6 +37,8 @@ NengoDL imports several open source libraries:
 
 To build the documentation, NengoDL uses:
 
+* `Click <http://click.pocoo.org/6/>`_ - Used under
+  `BSD license <http://click.pocoo.org/6/license/>`__
 * `GitHub Pages Import <https://github.com/davisp/ghp-import>`_ - Used under
   `Tumbolia Public License <https://github.com/davisp/ghp-import/blob/master/LICENSE>`__
 * `Jupyter <http://jupyter.org>`_ - Used under
