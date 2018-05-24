@@ -67,7 +67,7 @@ install:
       pip install -e .[tests];
     fi
   - if [[ "$MODE" == "examples" ]]; then
-      conda install -c conda-forge pyopencl
+      conda install -c conda-forge pyopencl;
       pip install nengo_ocl;
     fi
   - conda list -e
