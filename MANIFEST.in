@@ -9,6 +9,7 @@ recursive-include docs *.py
 recursive-include docs *.rst
 
 prune docs/_build
+prune docs/whitepaper
 prune tmp
 
 global-exclude *.ipynb_checkpoints*
