@@ -3,17 +3,13 @@ import itertools
 import os
 import pickle
 import sys
+import subprocess
 import time
 
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 
-# import logging
-#
-# logging.basicConfig(level=logging.INFO)
-
 import click
 import matplotlib.pyplot as plt
-import matplotlib.ticker
 import nengo
 from nengo import spa
 import nengo_dl
@@ -23,7 +19,11 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.contrib.learn.python.learn.datasets import mnist
 
-sys.path.append("../../../../spaun")
+# spaun needs to be downloaded from https://github.com/drasmuss/spaun2.0, and
+# manually added to python path
+if not os.path.exists("./spaun2.0"):
+    subprocess.call("git clone https://github.com/drasmuss/spaun2.0")
+sys.path.append("./spaun2.0")
 from _spaun.configurator import cfg
 from _spaun.vocabulator import vocab
 from _spaun.experimenter import experiment
@@ -71,9 +71,9 @@ def build_spaun(dimensions):
 
 @click.group()
 @click.pass_context
-@click.option("--load/--no-load", default=False)
-@click.option("--reps", default=5)
-@click.option("--show/--no-show", default=True)
+@click.option("--load/--no-load", default=False, help="Load results from file")
+@click.option("--reps", default=5, help="Number of data points to collect")
+@click.option("--show/--no-show", default=True, help="Show plots")
 def main(ctx, load, reps, show):
     ctx.obj["load"] = load
     ctx.obj["reps"] = reps
@@ -87,8 +87,9 @@ def main_callback(_, show, **kwargs):
 
 @main.command()
 @click.pass_context
-@click.option("--batch", default=1)
-@click.option("--n_neurons", default=9984)
+@click.option("--batch", default=1, help="Number of batch elements")
+@click.option("--n_neurons", default=9984,
+              help="Number of neurons per ensemble")
 def compare_backends(ctx, batch, n_neurons):
     load = ctx.obj["load"]
     reps = ctx.obj["reps"]
@@ -221,7 +222,8 @@ def compare_backends(ctx, batch, n_neurons):
 
 @main.command()
 @click.pass_context
-@click.option("--dimensions", default=128)
+@click.option("--dimensions", default=128,
+              help="Dimensionality of spaun model")
 def compare_optimizations(ctx, dimensions):
     load = ctx.obj["load"]
     reps = ctx.obj["reps"]
@@ -332,7 +334,7 @@ def compare_optimizations(ctx, dimensions):
 
 @main.command()
 @click.pass_context
-@click.option("--dimensions", default=4)
+@click.option("--dimensions", default=4, help="Dimensionality of spaun model")
 def compare_simplifications(ctx, dimensions):
     load = ctx.obj["load"]
     reps = ctx.obj["reps"]
@@ -394,7 +396,7 @@ def compare_simplifications(ctx, dimensions):
 
 @main.command()
 @click.pass_context
-@click.option("--n_epochs", default=10)
+@click.option("--n_epochs", default=10, help="Number of training epochs")
 def spiking_mnist(ctx, n_epochs):
     load = ctx.obj["load"]
     reps = ctx.obj["reps"]
@@ -518,8 +520,8 @@ def spiking_mnist(ctx, n_epochs):
 
 @main.command()
 @click.pass_context
-@click.option("--dimensions", default=64)
-@click.option("--n_epochs", default=10)
+@click.option("--dimensions", default=64, help="Dimensionality of vocabulary")
+@click.option("--n_epochs", default=10, help="Number of training epochs")
 def spa_optimization(ctx, dimensions, n_epochs):
     load = ctx.obj["load"]
     reps = ctx.obj["reps"]
