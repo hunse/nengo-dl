@@ -21,9 +21,10 @@ from tensorflow.contrib.learn.python.learn.datasets import mnist
 
 # spaun needs to be downloaded from https://github.com/drasmuss/spaun2.0, and
 # manually added to python path
-if not os.path.exists("./spaun2.0"):
+spaun_dir = os.path.join(os.path.dirname(__file__), "spaun2.0")
+if not os.path.exists(spaun_dir):
     subprocess.call("git clone https://github.com/drasmuss/spaun2.0")
-sys.path.append("./spaun2.0")
+sys.path.append(spaun_dir)
 from _spaun.configurator import cfg
 from _spaun.vocabulator import vocab
 from _spaun.experimenter import experiment
