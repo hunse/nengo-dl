@@ -95,7 +95,7 @@ script:
     elif [[ "$MODE" == "examples" ]]; then
       git clone https://github.com/drasmuss/spaun2.0;
       export PYTHONPATH=${PYTHONPATH}:${HOME}/spaun2.0;
-      eclipse >python docs/whitepaper/whitepaper2018_code.py &&
+      python docs/whitepaper/whitepaper2018_code.py > /dev/null &&
       python docs/whitepaper/whitepaper2018_plots.py &&
       pytest -v --durations 20 --nbval-lax docs/examples;
     else
