@@ -100,7 +100,7 @@ script:
       git clone https://github.com/drasmuss/spaun2.0;
       export PYTHONPATH=${PYTHONPATH}:${HOME}/spaun2.0;
       python docs/whitepaper/whitepaper2018_code.py > /dev/null &&
-      python docs/whitepaper/whitepaper2018_plots.py &&
+      python docs/whitepaper/whitepaper2018_plots.py --no-show --reps 1 test &&
       pytest -v --durations 20 --nbval-lax docs/examples;
     else
       pytest -n 2 --pyargs nengo && pytest -n 2 --durations 20 nengo_dl;
