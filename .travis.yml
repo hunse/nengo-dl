@@ -66,6 +66,9 @@ install:
     else
       pip install -e .[tests];
     fi
+  - if [[ "$MODE" == "examples" ]]; then
+      pip install nengo_ocl;
+    fi
   - conda list -e
   - pip freeze
 
