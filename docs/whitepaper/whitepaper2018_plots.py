@@ -74,9 +74,12 @@ def build_spaun(dimensions):
 @click.option("--load/--no-load", default=False, help="Load results from file")
 @click.option("--reps", default=5, help="Number of data points to collect")
 @click.option("--show/--no-show", default=True, help="Show plots")
-def main(ctx, load, reps, show):
+@click.option("--device", default="/gpu:0",
+              help="TensorFlow device to use for NengoDL")
+def main(ctx, load, reps, show, device):
     ctx.obj["load"] = load
     ctx.obj["reps"] = reps
+    ctx.obj["device"] = device
 
 
 @main.resultcallback()
@@ -93,6 +96,7 @@ def main_callback(_, show, **kwargs):
 def compare_backends(ctx, batch, n_neurons):
     load = ctx.obj["load"]
     reps = ctx.obj["reps"]
+    device = ctx.obj["device"]
     bench_names = ["integrator", "cconv", "basal_ganglia", "pes"]
     n_range = [n_neurons]
     d_range = [64, 128, 192]
@@ -130,7 +134,7 @@ def compare_backends(ctx, batch, n_neurons):
             if "nengo_dl" in backend:
                 sim = nengo_dl.Simulator(
                     net, unroll_simulation=25, minibatch_size=batch,
-                    device="/gpu:0", progress_bar=False)
+                    device=device, progress_bar=False)
             elif backend == "nengo":
                 sim = nengo.Simulator(net, progress_bar=False, optimize=True)
             elif backend == "nengo_ocl":
@@ -227,6 +231,7 @@ def compare_backends(ctx, batch, n_neurons):
 def compare_optimizations(ctx, dimensions):
     load = ctx.obj["load"]
     reps = ctx.obj["reps"]
+    device = ctx.obj["device"]
 
     # optimizations to apply (simplifications, merging, sorting, unroll)
     params = [
@@ -279,7 +284,7 @@ def compare_optimizations(ctx, dimensions):
 
             with nengo_dl.Simulator(
                     None, model=model, unroll_simulation=50 if unro else 1,
-                    device="/gpu:0") as sim:
+                    device=device) as sim:
                 sim.run(0.1)
 
                 sim_time = 1.0
@@ -338,6 +343,7 @@ def compare_optimizations(ctx, dimensions):
 def compare_simplifications(ctx, dimensions):
     load = ctx.obj["load"]
     reps = ctx.obj["reps"]
+    device = ctx.obj["device"]
 
     simplifications = [
         graph_optimizer.remove_constant_copies,
@@ -376,7 +382,7 @@ def compare_simplifications(ctx, dimensions):
             print("%d/%d" % (j + 1, len(params)), [x.__name__ for x in simps])
 
             with nengo_dl.Simulator(
-                    None, model=model, unroll_simulation=1, device="/gpu:0",
+                    None, model=model, unroll_simulation=1, device=device,
                     progress_bar=False) as sim:
                 sim.run(0.1, progress_bar=False)
 
