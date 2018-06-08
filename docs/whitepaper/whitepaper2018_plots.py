@@ -105,8 +105,10 @@ def compare_backends(ctx, batch, n_neurons):
     save = ctx.obj["save"]
 
     bench_names = ["integrator", "cconv", "basal_ganglia", "pes"]
-    n_range = [n_neurons]
-    d_range = [64, 128, 192]
+    # n_range = [n_neurons]
+    # d_range = [64, 128, 192]
+    n_range = [4096, 8192, 16384]
+    d_range = [128]
     neuron_types = [nengo.RectifiedLinear()]
     backends = ["nengo_dl", "nengo_ocl", "nengo"]
     sim_time = 5.0

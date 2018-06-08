@@ -185,8 +185,8 @@ class Simulator(object):
 
         # TODO: XLA compiling doesn't seem to provide any benefit at the
         # moment, revisit later after tensorflow has developed it further
-        config.graph_options.optimizer_options.global_jit_level = (
-            tf.OptimizerOptions.ON_1)
+        # config.graph_options.optimizer_options.global_jit_level = (
+        #     tf.OptimizerOptions.ON_1)
 
         self.sess = tf.Session(graph=self.tensor_graph.graph,
                                config=config)
