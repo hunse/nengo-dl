@@ -42,6 +42,11 @@ Release History
 - Better error message if user tries to train a network with non-differentiable
   elements
 
+**Deprecated**
+
+- ``Simulator.trange`` argument ``dt`` has been deprecated (replaced with
+  ``sample_every``, see https://github.com/nengo/nengo/pull/1384)
+
 **Removed**
 
 - Removed ``nengo_dl.DATA_DIR`` constant
