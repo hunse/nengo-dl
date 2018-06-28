@@ -64,16 +64,16 @@ NengoDL is a software framework designed to combine the strengths of neuromorphi
 
 \section{Introduction}
 
-Deep learning and neuromorphic modelling share many methodological similarities: at their core, they are concerned with how groups of neurons, communicating via connection weights, can carry out some function of interest.  By ``neuromorphic modelling'' we mean the construction of models that include increased levels of biological detail, in an effort to understand or recreate the functionality of the brain (this is on a continuum with deep learning, rather than a sharp distinction).  Despite these computational similarities, researchers in the respective fields tend to be isolated from one another.  We usually think of deep learning in terms of abstract nonlinear optimization problems, and practitioners are rarely concerned with applying those methods to the study of the brain (with exceptions, e.g. \citet{Kriegeskorte2015,Yamins2016}).  Correspondingly, there is a perception among neural modellers that deep learning methods are limited to abstract applications of artificial neural networks, and not of great help to those interested in studying how the brain works \citep{Kay2017}.
+Deep learning and neuromorphic modelling share many methodological similarities: at their core, they are concerned with how groups of neurons, communicating via connection weights, can carry out some function of interest.  By ``neuromorphic modelling'' we mean the construction of models that include increased levels of biological detail, in an effort to understand or recreate the functionality of the brain (this is on a continuum with deep learning, rather than a sharp distinction).  Despite these computational similarities, researchers in the respective fields tend to be isolated from one another.  We usually think of deep learning in terms of abstract nonlinear optimization problems, and practitioners are rarely concerned with applying those methods to the study of the brain (with exceptions, e.g. \citealt{Kriegeskorte2015,Yamins2016}).  Correspondingly, there is a perception among neural modellers that deep learning methods are limited to abstract applications of artificial neural networks, and not of great help to those interested in studying how the brain works \citep{Kay2017}.
 
 One significant outcome of this divide is that the tools of the two fields have become quite isolated.  Deep learning researchers use, e.g., TensorFlow \citep{Abadi2016}, Theano \citep{Team2016}, Caffe \citep{Jia2014}, or Torch \citep{Collobert2011}, while neuromorphic modellers use, e.g., Nengo \citep{Bekolay2014}, Brian \citep{Stimberg2013}, NEST \citep{Gewaltig2007}, or PyNN \citep{Davison2009}. There is very little overlap between the two groups of users.
 
 Our aim with NengoDL is to provide a tool that brings these two worlds together.  We want to combine the robust neuromorphic modelling API of Nengo with the power of deep learning frameworks (specifically TensorFlow).  In particular, there are three key design goals of NengoDL:
 
 \begin{itemize}
-\item Allowing users to construct neuromorphic models using Nengo and then optimize model parameters using deep learning methods
-\item Improving the simulation speed of neuromorphic models
-\item Making it easy to construct hybrid models (e.g., inserting convolutional layers into a neuromorphic model, or converting a deep learning network to use spiking neurons)
+\item Allow users to construct neuromorphic models using Nengo and then optimize model parameters using deep learning methods
+\item Improve the simulation speed of neuromorphic models
+\item Make it easy to construct hybrid models (e.g., inserting convolutional layers into a neuromorphic model, or converting a deep learning network to use spiking neurons)
 \end{itemize}
 
 In Section~\ref{sec:background} we discuss the two tools that form the basis of NengoDL (i.e., Nengo and TensorFlow).  Section~\ref{sec:usage} explains the basic features of NengoDL, with usage examples.  Section~\ref{sec:implementation} dives into the underlying implementation of NengoDL.  Finally, Section~\ref{sec:results} presents some benchmarking data, as well as results from some more complicated examples.
@@ -203,7 +203,9 @@ is functionally equivalent to
 
 \lstinputlisting[firstline=21, lastline=25]{whitepaper2018_code.py}
 
-The former will be much faster, as it takes better advantage of parallelism in the computations.  However, the output is not particularly interesting in this case, since the input is the same in all 10 instances (the constant input of 1 we specified when creating the input \texttt{Node}).  To take better advantage of batched simulations we need to use another new NengoDL feature, input feeds.
+The former will be much faster, as it takes better advantage of parallelism in the computations (see Section~\ref{sec:simulation_speed}).  
+
+However, the output is not particularly interesting in this case, since the input is the same in all 10 instances (the constant input of 1 we specified when creating the input \texttt{Node}).  To take better advantage of batched simulations we need to use another new NengoDL feature, input feeds.
 
 Input feeds allow the user to override the default value of any input \texttt{Node} in the model.  This is specified via the \texttt{input\_feeds} argument of \texttt{sim.run}.  This takes a dictionary mapping \texttt{Nodes} to arrays, where each array contain the values we want that node to output at each time step.  For example, we could have the input node output a random number on each timestep, with different random numbers in each batch element, via
 
@@ -402,6 +404,7 @@ Another optimization we perform is to simplify the \texttt{Operator} graph by ch
 There are two areas we will focus on in the results: the simulation speed of NengoDL, and some practical demonstrations of using NengoDL to construct and optimize a neural model.  The code needed to reproduce any of the results presented here is available at \url{https://github.com/nengo/nengo-dl/tree/master/docs/whitepaper}. 
 
 \subsection{Simulation speed}
+\label{sec:simulation_speed}
 
 \begin{figure}
 \centering
