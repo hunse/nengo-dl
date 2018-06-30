@@ -32,5 +32,6 @@ os.chdir("../tmp")  # so that we don't end up with a bunch of files in this dir
 sys.path.append("../docs/whitepaper")
 import whitepaper2018_plots  # pylint: disable=wrong-import-position
 
-sys.argv += "--no-show --reps 1 test".split()
+sys.argv += ("--no-show --reps 1 --device %s test" %
+             os.environ["NENGO_DL_TEST_DEVICE"]).split()
 whitepaper2018_plots.main(obj={})
